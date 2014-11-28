@@ -25,7 +25,6 @@ package prober // import "hkjn.me/prober"
 import (
 	"flag"
 	"fmt"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"sort"
@@ -180,16 +179,6 @@ func (p *Probe) runProbe() {
 		glog.Errorf("[%s] Timed out\n", p.Name)
 		p.handleResult(fmt.Errorf("%s timed out (with probe interval %1.1f sec)", p.Name, p.Interval.Seconds()))
 	}
-}
-
-// fakeProbe pretends to run the probe once, flipping a coin for the results.
-func (p *Probe) fakeProbe() {
-	glog.Infof("[%s] Pretending to probe..", p.Name)
-	var err error
-	if rand.Intn(3) == 0 {
-		err = fmt.Errorf("pretending that fake probe for %s failed", p.Name)
-	}
-	p.handleResult(err)
 }
 
 // add appends the record to the buffer for the probe, keeping it within bufferSize.
