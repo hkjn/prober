@@ -323,6 +323,7 @@ func (p *Probe) logPass() {
 }
 
 func init() {
+	flag.Parse()
 	flag.Var(&disabledProbes, "disabled_probes", "comma-separated list of probes to disable")
 	flag.Var(&onlyProbes, "only_probes", "comma-separated list of the only probes to enable")
 }
