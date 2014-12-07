@@ -46,10 +46,13 @@ var (
 	alertsDisabled    = flag.Bool("no_alerts", false, "disables alerts when probes fail too often")
 	disabledProbes    = make(selectedProbes)
 	onlyProbes        = make(selectedProbes)
-	minBadness        = 0 // minimum allowed value for `badness`
+	defaultMinBadness = 0  // default minimum allowed `badness`
+	defaultBadnessInc = 10 // default increment on failed probe
+	defaultBadnessDec = 1  // default decrement on successful probe
 	onceOpen          sync.Once
 	logFile           *os.File
 	bufferSize        = 200 // maximum number of results per prober to keep
+	parseFlags        = sync.Once{}
 )
 
 // Prober is a mechanism that can probe some target(s).
@@ -96,18 +99,37 @@ type Probe struct {
 	Name, Desc string // name, description of the probe
 	// If badness reaches alert threshold, an alert email is sent and
 	// alertThreshold resets.
-	Badness   int
-	Interval  time.Duration // how often to probe
-	Timeout   time.Duration // timeout for probe call, defaults to same as probing inteval
-	Alerting  bool          // whether this probe is currently alerting
-	LastAlert time.Time     // time of last alert sent, if any
-	Disabled  bool          // whether this probe is disabled
-	Records   Records       // records of probe runs
+	Badness    int
+	Interval   time.Duration // how often to probe
+	Timeout    time.Duration // timeout for probe call, defaults to same as probing inteval
+	Alerting   bool          // whether this probe is currently alerting
+	LastAlert  time.Time     // time of last alert sent, if any
+	Disabled   bool          // whether this probe is disabled
+	Records    Records       // records of probe runs
+	minBadness int           // minimum allowed `badness` value
+	badnessInc int           // how much to increment `badness` with on failure
+	badnessDec int           // how much to decrement `badness` with on success
 }
 
 // NewProbe returns a new probe from given prober implementation.
 func NewProbe(p Prober, name, desc string, options ...func(*Probe)) *Probe {
-	probe := &Probe{p, name, desc, minBadness, *DefaultInterval, *DefaultInterval, false, time.Time{}, false, Records{}}
+	parseFlags.Do(func() {
+		if !flag.Parsed() {
+			flag.Parse()
+		}
+	})
+	probe := &Probe{
+		Prober:     p,
+		Name:       name,
+		Desc:       desc,
+		Badness:    defaultMinBadness,
+		Interval:   *DefaultInterval,
+		Timeout:    *DefaultInterval,
+		Records:    Records{},
+		minBadness: defaultMinBadness,
+		badnessInc: defaultBadnessInc,
+		badnessDec: defaultBadnessDec,
+	}
 	for _, opt := range options {
 		opt(probe)
 	}
@@ -125,6 +147,20 @@ func Interval(interval time.Duration) func(*Probe) {
 func Timeout(timeout time.Duration) func(*Probe) {
 	return func(p *Probe) {
 		p.Timeout = timeout
+	}
+}
+
+// FailurePenalty sets the amount `badness` is incremented on failure for the prober.
+func FailurePenalty(badnessInc int) func(*Probe) {
+	return func(p *Probe) {
+		p.badnessInc = badnessInc
+	}
+}
+
+// SuccessReward sets the amount `badness` is decremented on success for the prober.
+func SuccessReward(badnessDec int) func(*Probe) {
+	return func(p *Probe) {
+		p.badnessDec = badnessDec
 	}
 }
 
@@ -257,12 +293,12 @@ func openLog() {
 // handleResult handles a return value from a probe() run.
 func (p *Probe) handleResult(err error) {
 	if err != nil {
-		p.Badness += 10
+		p.Badness += p.badnessInc
 		glog.Errorf("[%s] Failed while probing, badness is now %d: %v\n", p.Name, p.Badness, err)
 		p.logFail(err)
 	} else {
-		if p.Badness > minBadness {
-			p.Badness -= 1
+		if p.Badness > p.minBadness {
+			p.Badness -= p.badnessDec
 		}
 		glog.Infof("[%s] Pass, badness is now %d.\n", p.Name, p.Badness)
 		p.logPass()
@@ -293,9 +329,14 @@ func (p *Probe) handleResult(err error) {
 			// Note: We don't reset badness here; next cycle we'll keep
 			// trying to send the alert.
 		} else {
+			// TODO: There is a possible race condition here, if email
+			// sending takes long enough for further Probe() runs to finish,
+			// which would queue up several duplicate alert emails. This
+			// shouldn't often happen, but technically should be bounded by
+			// a timeout to prevent the possibility.
 			glog.Infof("[%s] sent alert email, resetting badness to 0\n", p.Name)
 			p.LastAlert = time.Now().UTC()
-			p.Badness = 0
+			p.Badness = p.minBadness
 		}
 	}()
 }
@@ -323,7 +364,6 @@ func (p *Probe) logPass() {
 }
 
 func init() {
-	flag.Parse()
 	flag.Var(&disabledProbes, "disabled_probes", "comma-separated list of probes to disable")
 	flag.Var(&onlyProbes, "only_probes", "comma-separated list of the only probes to enable")
 }
