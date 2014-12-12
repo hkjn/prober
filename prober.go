@@ -322,23 +322,26 @@ func (p *Probe) handleResult(err error) {
 	}
 	// Send alert notification in goroutine to not block further
 	// probing.
-	go func() {
-		err := p.Alert(p.Name, p.Desc, p.Badness, p.Records)
-		if err != nil {
-			glog.Errorf("[%s] failed to alert: %v", p.Name, err)
-			// Note: We don't reset badness here; next cycle we'll keep
-			// trying to send the alert.
-		} else {
-			// TODO: There is a possible race condition here, if email
-			// sending takes long enough for further Probe() runs to finish,
-			// which would queue up several duplicate alert emails. This
-			// shouldn't often happen, but technically should be bounded by
-			// a timeout to prevent the possibility.
-			glog.Infof("[%s] sent alert email, resetting badness to 0\n", p.Name)
-			p.LastAlert = time.Now().UTC()
-			p.Badness = p.minBadness
-		}
-	}()
+	// TODO: There is a race condition here, if email sending takes long
+	// enough for further Probe() runs to finish, which would queue up
+	// several duplicate alert emails. This shouldn't often happen, but
+	// technically should be bounded by a timeout to prevent the
+	// possibility.
+	go p.sendAlert()
+}
+
+// sendAlert calls the Alert() implementation and handles the outcome.
+func (p *Probe) sendAlert() {
+	err := p.Alert(p.Name, p.Desc, p.Badness, p.Records)
+	if err != nil {
+		glog.Errorf("[%s] failed to alert: %v", p.Name, err)
+		// Note: We don't reset badness here; next cycle we'll keep
+		// trying to send the alert.
+	} else {
+		glog.Infof("[%s] sent alert email, resetting badness to 0\n", p.Name)
+		p.LastAlert = time.Now().UTC()
+		p.Badness = p.minBadness
+	}
 }
 
 // logFail logs a failed probe run.
