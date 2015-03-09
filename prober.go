@@ -109,6 +109,7 @@ type Probe struct {
 	minBadness int           // minimum allowed `badness` value
 	badnessInc int           // how much to increment `badness` with on failure
 	badnessDec int           // how much to decrement `badness` with on success
+	reportFn   func(error)   // function to call to report probe results
 }
 
 // NewProbe returns a new probe from given prober implementation.
@@ -147,6 +148,13 @@ func Interval(interval time.Duration) func(*Probe) {
 func Timeout(timeout time.Duration) func(*Probe) {
 	return func(p *Probe) {
 		p.Timeout = timeout
+	}
+}
+
+// Report sets the function to call to report probe results.
+func Report(fn func(error)) func(*Probe) {
+	return func(p *Probe) {
+		p.reportFn = fn
 	}
 }
 
@@ -292,6 +300,9 @@ func openLog() {
 
 // handleResult handles a return value from a probe() run.
 func (p *Probe) handleResult(err error) {
+	if p.reportFn != nil {
+		p.reportFn(err)
+	}
 	if err != nil {
 		p.Badness += p.badnessInc
 		glog.Errorf("[%s] Failed while probing, badness is now %d: %v\n", p.Name, p.Badness, err)
