@@ -4,15 +4,15 @@
 	"Deps": [
 		{
 			"ImportPath": "github.com/golang/glog",
-			"Rev": "d1c4472bf2efd3826f2b5bdcc02d8416798d678c"
+			"Rev": "44145f04b68cf362d9c4df2182967c2275eaefed"
 		},
 		{
 			"ImportPath": "gopkg.in/yaml.v2",
-			"Rev": "eca94c41d994ae2215d455ce578ae6e2dc6ee516"
+			"Rev": "a1c4bcb6c278a41992e2f4f0f29a44b4146daa5c"
 		},
 		{
 			"ImportPath": "hkjn.me/timeutils",
-			"Rev": "1626a1894d00a3e6bf4c8e5ef5f7a776860b38c3"
+			"Rev": "803822f227b188e4d119474a5e2e4bfbcef3037f"
 		}
 	]
 }

@@ -1,5 +1,5 @@
 // Package timeutils provides some convenience functions around time.
-package timeutils // import "hkjn.me/timeutils"
+package timeutils
 
 import (
 	"fmt"
@@ -66,7 +66,7 @@ func MustParseDuration(s string) time.Duration {
 // Must panics if error is non-nil.
 //
 // Intended use is to wrap function calls that must succeed, e.g:
-//   t := Must(ParseStd("2013-07-31"))
+//   t := Must(ParseStd("2013-07-31 07:30"))
 func Must(t time.Time, err error) time.Time {
 	if err != nil {
 		log.Fatalf("got err: %v\n", err)
@@ -79,7 +79,7 @@ func AsMillis(t time.Time, offset int) int {
 	return int(t.UTC().UnixNano()/1000000) + offset*1000
 }
 
-// ParseStd parses the value using a standard layout, with time.UTC timezone.
+// ParseStd returns the string value parsed using StdLayout.
 func ParseStd(value string) (time.Time, error) {
 	return time.Parse(StdLayout, value)
 }
