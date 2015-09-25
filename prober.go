@@ -53,16 +53,85 @@ var (
 	logFile           *os.File
 	bufferSize        = 200 // maximum number of results per prober to keep
 	parseFlags        = sync.Once{}
+	results           = [2]string{"Pass", "Fail"}
 )
 
-// Prober is a mechanism that can probe some target(s).
-type Prober interface {
-	Probe() error                                                // probe target(s) once
-	Alert(name, desc string, badness int, records Records) error // send alert
+const (
+	Pass ResultCode = iota
+	Fail
+)
+
+type (
+	// Result describes the outcome of a single probe.
+	Result struct {
+		Code    ResultCode
+		Error   error
+		Info    string // Optional extra information
+		InfoUrl string // Optional URL to further information
+	}
+
+	// ResultCode describes pass/fail outcomes for probes.
+	ResultCode int
+
+	// Record is the result of a single probe run.
+	Record struct {
+		Timestamp  time.Time `yaml: "-"`
+		TimeMillis string    // same as Timestamp but makes it into the YAML logs
+		Result     Result    // the result of the probe run
+	}
+
+	// Records is a grouping of probe records that implements sort.Interface.
+	Records []Record
+
+	// Prober is a mechanism that can probe some target(s).
+	Prober interface {
+		Probe() Result                                               // probe target(s) once
+		Alert(name, desc string, badness int, records Records) error // send alert
+	}
+
+	// Options is a grouping of settings for probers.
+	Options []func(*Probe)
+
+	// selectedProbes is a set of probes to be enabled/disabled.
+	selectedProbes map[string]bool
+)
+
+// String returns the English name of the result.
+func (r ResultCode) String() string { return results[r] }
+
+// Passed returns whether the probe result indicates a pass.
+func (r Result) Passed() bool { return r.Code == Pass }
+
+// FailedWith returns a Result representing failure with given error.
+func FailedWith(err error) Result {
+	return Result{
+		Code:  Fail,
+		Error: err,
+		Info:  fmt.Sprintf("The probe failed with %q", err.Error()),
+	}
 }
 
-// selectedProbes is a set of probes to be enabled/disabled.
-type selectedProbes map[string]bool
+// FailedWith returns a Result representing failure with given error and extra information.
+func FailedWithInfo(err error, info, infoUrl string) Result {
+	return Result{
+		Code:    Fail,
+		Error:   err,
+		Info:    info,
+		InfoUrl: infoUrl,
+	}
+}
+
+// Passed returns a Result representing pass.
+func Passed() Result { return Result{Code: Pass} }
+
+// PasseWith returns a Result representing pass, with extra info.
+func PassedWith(info, url string) Result {
+	return Result{
+		Code:    Pass,
+		Info:    info,
+		InfoUrl: url,
+	}
+}
 
 // String returns the flag's value.
 func (d *selectedProbes) String() string {
@@ -79,9 +148,7 @@ func (d *selectedProbes) String() string {
 
 // Get is part of the flag.Getter interface. It always returns nil for
 // this flag type since the struct is not exported.
-func (d *selectedProbes) Get() interface{} {
-	return nil
-}
+func (d *selectedProbes) Get() interface{} { return nil }
 
 // Syntax: -disable_probes=FooProbe,BarProbe
 func (d *selectedProbes) Set(value string) error {
@@ -105,11 +172,11 @@ type Probe struct {
 	Alerting   bool          // whether this probe is currently alerting
 	LastAlert  time.Time     // time of last alert sent, if any
 	Disabled   bool          // whether this probe is disabled
-	Records    Records       // records of probe runs
+	Records    Records       // historical records of probe runs
 	minBadness int           // minimum allowed `badness` value
-	badnessInc int           // how much to increment `badness` with on failure
-	badnessDec int           // how much to decrement `badness` with on success
-	reportFn   func(error)   // function to call to report probe results
+	badnessInc int           // how much to increment `badness` on failure
+	badnessDec int           // how much to decrement `badness` on success
+	reportFn   func(Result)  // function to call to report probe results
 }
 
 // NewProbe returns a new probe from given prober implementation.
@@ -152,7 +219,7 @@ func Timeout(timeout time.Duration) func(*Probe) {
 }
 
 // Report sets the function to call to report probe results.
-func Report(fn func(error)) func(*Probe) {
+func Report(fn func(Result)) func(*Probe) {
 	return func(p *Probe) {
 		p.reportFn = fn
 	}
@@ -205,23 +272,27 @@ func (p *Probe) enabled() bool {
 
 // runProbe runs the probe once.
 func (p *Probe) runProbe() {
-	c := make(chan error, 1)
+	c := make(chan Result, 1)
 	start := time.Now().UTC()
 	go func() {
 		glog.Infof("[%s] Probing..\n", p.Name)
 		c <- p.Probe()
 	}()
 	select {
-	case err := <-c:
+	case r := <-c:
 		// We got a result of some sort from the prober.
-		p.handleResult(err)
+		p.handleResult(r)
 		wait := p.Timeout - time.Since(start)
 		glog.V(2).Infof("[%s] needs to sleep %v more here\n", p.Name, wait)
 		time.Sleep(wait)
 	case <-time.After(p.Interval):
 		// Probe didn't finish in time for us to run the next one, report as failure.
 		glog.Errorf("[%s] Timed out\n", p.Name)
-		p.handleResult(fmt.Errorf("%s timed out (with probe interval %1.1f sec)", p.Name, p.Interval.Seconds()))
+		timeoutFail := FailedWith(
+			fmt.Errorf("%s timed out (with probe interval %1.1f sec)",
+				p.Name,
+				p.Interval.Seconds()))
+		p.handleResult(timeoutFail)
 	}
 }
 
@@ -236,9 +307,6 @@ func (p *Probe) addRecord(r Record) {
 	glog.V(2).Infof("[%s] buffer is now %d elements\n", p.Name, len(p.Records))
 }
 
-// Records is a grouping of probe records that implements sort.Interface.
-type Records []Record
-
 func (pr Records) Len() int           { return len(pr) }
 func (pr Records) Swap(i, j int)      { pr[i], pr[j] = pr[j], pr[i] }
 func (pr Records) Less(i, j int) bool { return pr[i].Timestamp.Before(pr[j].Timestamp) }
@@ -247,7 +315,7 @@ func (pr Records) Less(i, j int) bool { return pr[i].Timestamp.Before(pr[j].Time
 func (pr Records) RecentFailures() Records {
 	failures := make(Records, 0)
 	for _, r := range pr {
-		if !r.Passed && !r.Timestamp.Before(time.Now().Add(-time.Hour)) {
+		if !r.Result.Passed() && !r.Timestamp.Before(time.Now().Add(-time.Hour)) {
 			failures = append(failures, r)
 		}
 	}
@@ -255,28 +323,9 @@ func (pr Records) RecentFailures() Records {
 	return failures
 }
 
-// Record is the result of a single probe run.
-type Record struct {
-	Timestamp  time.Time `yaml: "-"`
-	TimeMillis string    // same as Timestamp but makes it into the YAML logs
-	Passed     bool
-	Details    string `yaml: "omitempty"`
-}
-
 // Ago describes the duration since the record occured.
 func (r Record) Ago() string {
 	return timeutils.DescDuration(time.Since(r.Timestamp))
-}
-
-// newRecord returns a new record.
-func newRecord(passed bool, line string) Record {
-	now := time.Now().UTC()
-	return Record{
-		Timestamp:  now,
-		TimeMillis: now.Format(time.StampMilli),
-		Passed:     passed,
-		Details:    line,
-	}
 }
 
 // Marshal returns the record in YAML form.
@@ -291,6 +340,7 @@ func (r Record) marshal() []byte {
 // openLog opens the log file.
 func openLog() {
 	logPath := filepath.Join(logDir, logName)
+	glog.V(1).Infof("Using YAML log file %q\n", logPath)
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, os.ModePerm)
 	if err != nil {
 		glog.Fatalf("failed to open %q: %v\n", logPath, err)
@@ -298,22 +348,22 @@ func openLog() {
 	logFile = f
 }
 
-// handleResult handles a return value from a probe() run.
-func (p *Probe) handleResult(err error) {
+// handleResult handles a return value from a Probe() run.
+func (p *Probe) handleResult(r Result) {
 	if p.reportFn != nil {
-		p.reportFn(err)
+		// Call custom report function, if specified.
+		p.reportFn(r)
 	}
-	if err != nil {
-		p.Badness += p.badnessInc
-		glog.Errorf("[%s] Failed while probing, badness is now %d: %v\n", p.Name, p.Badness, err)
-		p.logFail(err)
-	} else {
+	if r.Passed() {
 		if p.Badness > p.minBadness {
 			p.Badness -= p.badnessDec
 		}
-		glog.Infof("[%s] Pass, badness is now %d.\n", p.Name, p.Badness)
-		p.logPass()
+		glog.V(1).Infof("[%s] Pass, badness is now %d.\n", p.Name, p.Badness)
+	} else {
+		p.Badness += p.badnessInc
+		glog.Errorf("[%s] Failed while probing, badness is now %d: %v\n", p.Name, p.Badness, r.Error)
 	}
+	p.logResult(r)
 
 	if p.Badness < *alertThreshold {
 		p.Alerting = false
@@ -355,25 +405,20 @@ func (p *Probe) sendAlert() {
 	}
 }
 
-// logFail logs a failed probe run.
-func (p *Probe) logFail(err error) {
+// logResult logs the result of a probe run.
+func (p *Probe) logResult(res Result) {
 	onceOpen.Do(openLog)
-	r := newRecord(false, err.Error())
-	p.addRecord(r)
-	_, err = logFile.Write(r.marshal())
-	if err != nil {
-		glog.Fatalf("failed to write failure to log: %v", err)
+	now := time.Now().UTC()
+	rec := Record{
+		Timestamp:  now,
+		TimeMillis: now.Format(time.StampMilli),
+		Result:     res,
 	}
-}
 
-// logPass logs a successful probe run.
-func (p *Probe) logPass() {
-	onceOpen.Do(openLog)
-	r := newRecord(true, "")
-	p.addRecord(r)
-	_, err := logFile.Write(r.marshal())
+	p.addRecord(rec)
+	_, err := logFile.Write(rec.marshal())
 	if err != nil {
-		glog.Fatalf("failed to write success to log: %v", err)
+		glog.Fatalf("failed to write record to log: %v", err)
 	}
 }
 
