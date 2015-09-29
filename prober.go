@@ -89,8 +89,8 @@ type (
 		Alert(name, desc string, badness int, records Records) error // send alert
 	}
 
-	// Options is a grouping of settings for probers.
-	Options []func(*Probe)
+	// Option is a setting for an individual prober.
+	Option func(*Probe)
 
 	// selectedProbes is a set of probes to be enabled/disabled.
 	selectedProbes map[string]bool
@@ -180,7 +180,7 @@ type Probe struct {
 }
 
 // NewProbe returns a new probe from given prober implementation.
-func NewProbe(p Prober, name, desc string, options ...func(*Probe)) *Probe {
+func NewProbe(p Prober, name, desc string, options ...Option) *Probe {
 	parseFlags.Do(func() {
 		if !flag.Parsed() {
 			flag.Parse()
