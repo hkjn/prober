@@ -94,6 +94,26 @@ type (
 
 	// selectedProbes is a set of probes to be enabled/disabled.
 	selectedProbes map[string]bool
+
+	// Probe is a stateful representation of repeated probe runs.
+	Probe struct {
+		Prober            // underlying prober mechanism
+		Name, Desc string // name, description of the probe
+		// If badness reaches alert threshold, an alert email is sent and
+		// alertThreshold resets.
+		Badness    int
+		Interval   time.Duration // how often to probe
+		Timeout    time.Duration // timeout for probe call, defaults to same as probing inteval
+		Alerting   bool          // whether this probe is currently alerting
+		LastAlert  time.Time     // time of last alert sent, if any
+		Disabled   bool          // whether this probe is disabled
+		Records    Records       // historical records of probe runs
+		minBadness int           // minimum allowed `badness` value
+		badnessInc int           // how much to increment `badness` on failure
+		badnessDec int           // how much to decrement `badness` on success
+		reportFn   func(Result)  // function to call to report probe results
+	}
+	Probes []*Probe
 )
 
 // String returns the English name of the result.
@@ -158,25 +178,6 @@ func (d *selectedProbes) Set(value string) error {
 		m[p] = true
 	}
 	return nil
-}
-
-// Probe is a stateful representation of repeated probe runs.
-type Probe struct {
-	Prober            // underlying prober mechanism
-	Name, Desc string // name, description of the probe
-	// If badness reaches alert threshold, an alert email is sent and
-	// alertThreshold resets.
-	Badness    int
-	Interval   time.Duration // how often to probe
-	Timeout    time.Duration // timeout for probe call, defaults to same as probing inteval
-	Alerting   bool          // whether this probe is currently alerting
-	LastAlert  time.Time     // time of last alert sent, if any
-	Disabled   bool          // whether this probe is disabled
-	Records    Records       // historical records of probe runs
-	minBadness int           // minimum allowed `badness` value
-	badnessInc int           // how much to increment `badness` on failure
-	badnessDec int           // how much to decrement `badness` on success
-	reportFn   func(Result)  // function to call to report probe results
 }
 
 // NewProbe returns a new probe from given prober implementation.
@@ -420,6 +421,28 @@ func (p *Probe) logResult(res Result) {
 	if err != nil {
 		glog.Fatalf("failed to write record to log: %v", err)
 	}
+}
+
+// Enabled returns only the Enabled probes.
+func (ps Probes) Enabled() Probes {
+	disabled := make(Probes, 0)
+	for _, p := range ps {
+		if !p.Disabled {
+			disabled = append(disabled, p)
+		}
+	}
+	return disabled
+}
+
+// Disabled returns only the disabled probes.
+func (ps Probes) Disabled() Probes {
+	disabled := make(Probes, 0)
+	for _, p := range ps {
+		if p.Disabled {
+			disabled = append(disabled, p)
+		}
+	}
+	return disabled
 }
 
 func init() {
