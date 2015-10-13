@@ -1,9 +1,0 @@
-[submodule "vendor/github.com/golang/glog"]
-	path = vendor/github.com/golang/glog
-	url = https://github.com/golang/glog.git
-[submodule "vendor/gopkg.in/yaml.v2"]
-	path = vendor/gopkg.in/yaml.v2
-	url = https://github.com/go-yaml/yaml.git
-[submodule "vendor/hkjn.me/timeutils"]
-	path = vendor/hkjn.me/timeutils
-	url = https://github.com/hkjn/timeutils.git

@@ -1,0 +1,18 @@
+{
+	"ImportPath": "hkjn.me/prober",
+	"GoVersion": "go1.4.2",
+	"Deps": [
+		{
+			"ImportPath": "github.com/golang/glog",
+			"Rev": "44145f04b68cf362d9c4df2182967c2275eaefed"
+		},
+		{
+			"ImportPath": "gopkg.in/yaml.v2",
+			"Rev": "a1c4bcb6c278a41992e2f4f0f29a44b4146daa5c"
+		},
+		{
+			"ImportPath": "hkjn.me/timeutils",
+			"Rev": "803822f227b188e4d119474a5e2e4bfbcef3037f"
+		}
+	]
+}
