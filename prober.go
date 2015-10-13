@@ -205,14 +205,14 @@ func NewProbe(p Prober, name, desc string, options ...Option) *Probe {
 	return probe
 }
 
-// Interval sets the interval option for the prober.
+// Interval sets the interval for the prober.
 func Interval(interval time.Duration) func(*Probe) {
 	return func(p *Probe) {
 		p.Interval = interval
 	}
 }
 
-// Timeout sets the timeout option for the prober.
+// Timeout sets the timeout for the prober.
 func Timeout(timeout time.Duration) func(*Probe) {
 	return func(p *Probe) {
 		p.Timeout = timeout
@@ -255,10 +255,16 @@ func (p *Probe) Run() {
 	}
 }
 
+// String returns a human-readable representation of the Probe.
+func (p *Probe) String() string {
+	return fmt.Sprintf("&Probe{Name: %q, Desc: %q}", p.Name, p.Desc)
+}
+
+// enabled returns true if this probe is enabled.
 func (p *Probe) enabled() bool {
 	if len(onlyProbes) > 0 {
 		if _, ok := onlyProbes[p.Name]; ok {
-			// We only want specific probes, but we do want this one.
+			// We only want specific probes, but this probe is one of them.
 			return true
 		}
 		return false
@@ -308,9 +314,62 @@ func (p *Probe) addRecord(r Record) {
 	glog.V(2).Infof("[%s] buffer is now %d elements\n", p.Name, len(p.Records))
 }
 
-func (pr Records) Len() int           { return len(pr) }
-func (pr Records) Swap(i, j int)      { pr[i], pr[j] = pr[j], pr[i] }
-func (pr Records) Less(i, j int) bool { return pr[i].Timestamp.Before(pr[j].Timestamp) }
+// Equal returns true if the probes are equal.
+func (p1 *Probe) Equal(p2 *Probe) bool {
+	if p2 == nil {
+		return false
+	}
+	if p1.Name != p2.Name {
+		return false
+	}
+	if p1.Badness != p2.Badness {
+		return false
+	}
+	if p1.Interval != p2.Interval {
+		return false
+	}
+	if p1.Timeout != p2.Timeout {
+		return false
+	}
+	if p1.Alerting != p2.Alerting {
+		return false
+	}
+	if !p1.LastAlert.Equal(p2.LastAlert) {
+		return false
+	}
+	if p1.Disabled != p2.Disabled {
+		return false
+	}
+	if !p1.Records.Equal(p2.Records) {
+		return false
+	}
+	if p1.minBadness != p2.minBadness {
+		return false
+	}
+	if p1.badnessInc != p2.badnessInc {
+		return false
+	}
+	return true
+}
+
+// Equal returns true if the Records are equal.
+func (rs1 Records) Equal(rs2 Records) bool {
+	if len(rs1) != len(rs2) {
+		return false
+	}
+	for i, r1 := range rs1 {
+		r2 := rs2[i]
+		if !r1.Equal(r2) {
+			return false
+		}
+	}
+	return true
+}
+
+// Implement sort.Interface for Records. The sort order is chronological.
+func (rs Records) Len() int           { return len(rs) }
+func (rs Records) Swap(i, j int)      { rs[i], rs[j] = rs[j], rs[i] }
+func (rs Records) Less(i, j int) bool { return rs[i].Timestamp.Before(rs[j].Timestamp) }
 
 // RecentFailures returns only recent probe failures among the records.
 func (pr Records) RecentFailures() Records {
@@ -336,6 +395,20 @@ func (r Record) marshal() []byte {
 		glog.Fatalf("failed to marshal record %+v: %v", r, err)
 	}
 	return b
+}
+
+// Equal returns true if the Record objects are equal.
+func (r1 Record) Equal(r2 Record) bool {
+	if !r1.Timestamp.Equal(r2.Timestamp) {
+		return false
+	}
+	if r1.TimeMillis != r2.TimeMillis {
+		return false
+	}
+	if r1.Result != r2.Result {
+		return false
+	}
+	return true
 }
 
 // openLog opens the log file.
@@ -422,6 +495,64 @@ func (p *Probe) logResult(res Result) {
 		glog.Fatalf("failed to write record to log: %v", err)
 	}
 }
+
+// Equal returns true if both Probes are equal.
+func (ps1 Probes) Equal(ps2 Probes) bool {
+	if len(ps1) != len(ps2) {
+		return false
+	}
+	for i, p1 := range ps1 {
+		if !ps2[i].Equal(p1) {
+			return false
+		}
+	}
+	return true
+}
+
+// Implement sort.Interface for Probes.
+func (ps Probes) Len() int { return len(ps) }
+
+// Less returns true if probe i should sort before probe j.
+//
+// Less is implemented to give the natural order that's likely to be
+// most useful when ordering Probes, i.e. with the ones requiring
+// attention first. Since the default sort order is ascending, this
+// means that "lower values" will correspond to probes in worse state.
+func (ps Probes) Less(i, j int) bool {
+	if ps[i].Disabled != ps[j].Disabled {
+		// Disabled probes sort after (higher value than) non-disabled ones.
+		return ps[j].Disabled
+	}
+	if ps[i].Alerting != ps[j].Alerting {
+		// Alerting probes sort before (lower value than) non-alerting ones.
+		return ps[i].Alerting
+	}
+	if ps[i].Badness != ps[j].Badness {
+		// Probes with higher badness sort before ones with lower badness.
+		return ps[i].Badness > ps[j].Badness
+	}
+	if ps[i].LastAlert != ps[j].LastAlert {
+		// Probes that alerted longer ago sort after ones that alerted
+		// more recently.
+		return ps[i].LastAlert.After(ps[j].LastAlert)
+	}
+	if len(ps[i].Records) != len(ps[j].Records) {
+		// Probes with shorter history sort after those with longer
+		// history.
+		return len(ps[i].Records) > len(ps[j].Records)
+	}
+	// Tie-breaker: Sort by name.
+	if ps[i].Name != ps[j].Name {
+		return ps[i].Name < ps[j].Name
+	}
+	// Tie-breaker #2: Sort by desc.
+	if ps[i].Desc != ps[j].Desc {
+		return ps[i].Desc < ps[j].Desc
+	}
+	// We have no way of comparing.
+	return true
+}
+func (ps Probes) Swap(i, j int) { ps[i], ps[j] = ps[j], ps[i] }
 
 // Enabled returns only the Enabled probes.
 func (ps Probes) Enabled() Probes {
