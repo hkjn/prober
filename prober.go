@@ -554,28 +554,6 @@ func (ps Probes) Less(i, j int) bool {
 }
 func (ps Probes) Swap(i, j int) { ps[i], ps[j] = ps[j], ps[i] }
 
-// Enabled returns only the Enabled probes.
-func (ps Probes) Enabled() Probes {
-	disabled := make(Probes, 0)
-	for _, p := range ps {
-		if !p.Disabled {
-			disabled = append(disabled, p)
-		}
-	}
-	return disabled
-}
-
-// Disabled returns only the disabled probes.
-func (ps Probes) Disabled() Probes {
-	disabled := make(Probes, 0)
-	for _, p := range ps {
-		if p.Disabled {
-			disabled = append(disabled, p)
-		}
-	}
-	return disabled
-}
-
 func init() {
 	flag.Var(&disabledProbes, "disabled_probes", "comma-separated list of probes to disable")
 	flag.Var(&onlyProbes, "only_probes", "comma-separated list of the only probes to enable")
