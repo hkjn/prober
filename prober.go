@@ -33,8 +33,8 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/hkjn/timeutils"
 	"gopkg.in/yaml.v2"
-	"hkjn.me/timeutils"
 )
 
 var (
