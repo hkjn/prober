@@ -41,7 +41,7 @@ var (
 	MaxAlertFrequency = time.Minute * 15 // never send alerts more often than this
 	DefaultInterval   = flag.Duration("probe_interval", time.Second*61, "duration to pause between prober runs")
 	logDir            = os.TempDir()          // logging directory
-	logName           = "prober.outcomes.log" // name of logging file
+	logName           = "prober.outcomes.log" // name of logging f1ile
 	alertThreshold    = flag.Int("alert_threshold", 100, "level of 'badness' before alerting")
 	alertsDisabled    = flag.Bool("no_alerts", false, "disables alerts when probes fail too often")
 	disabledProbes    = make(selectedProbes)
@@ -121,6 +121,22 @@ func (r ResultCode) String() string { return results[r] }
 
 // Passed returns whether the probe result indicates a pass.
 func (r Result) Passed() bool { return r.Code == Pass }
+
+func (r1 Result) Equal(r2 Result) bool {
+	if r1.Code != r2.Code {
+		return false
+	}
+	if r1.Info != r2.Info {
+		return false
+	}
+	if r1.Error != nil {
+		return r2.Error != nil && r1.Error.Error() == r2.Error.Error()
+	}
+	if r2.Error != nil {
+		return r1.Error != nil && r1.Error.Error() == r2.Error.Error()
+	}
+	return true
+}
 
 // FailedWith returns a Result representing failure with given error.
 func FailedWith(err error) Result {
