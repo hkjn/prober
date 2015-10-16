@@ -20,7 +20,7 @@
 //   // want to do this in a goroutine — you could e.g. register a web
 //   // handler to show the contents of p.Records here.
 //   go p.Run()
-package prober // import "hkjn.me/prober"
+package prober
 
 import (
 	"flag"
