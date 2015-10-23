@@ -41,7 +41,7 @@ var (
 	// TODO(hkjn): Replace this with a global "max 1 alerts per X
 	// minutes" setting? If we have 1000 probes, we still would get 1000
 	// alerts every 15 min..
-	MaxAlertFrequency = time.Minute * 15 // never send alerts more often than this
+	MaxAlertFrequency = time.Minute * 15 // never call Alert() more often than this
 	DefaultInterval   = flag.Duration("probe_interval", time.Second*61, "duration to pause between prober runs")
 	logDir            = os.TempDir()          // logging directory
 	logName           = "prober.outcomes.log" // name of logging f1ile
@@ -106,7 +106,6 @@ type (
 		// alertThreshold resets.
 		Badness    int
 		Interval   time.Duration // how often to probe
-		Timeout    time.Duration // timeout for probe call, defaults to same as probing inteval
 		Alerting   bool          // whether this probe is currently alerting
 		LastAlert  time.Time     // time of last alert sent, if any
 		Disabled   bool          // whether this probe is disabled
@@ -212,7 +211,6 @@ func NewProbe(p Prober, name, desc string, options ...Option) *Probe {
 		Desc:       desc,
 		Badness:    defaultMinBadness,
 		Interval:   *DefaultInterval,
-		Timeout:    *DefaultInterval,
 		Records:    Records{},
 		minBadness: defaultMinBadness,
 		badnessInc: defaultBadnessInc,
@@ -228,13 +226,6 @@ func NewProbe(p Prober, name, desc string, options ...Option) *Probe {
 func Interval(interval time.Duration) func(*Probe) {
 	return func(p *Probe) {
 		p.Interval = interval
-	}
-}
-
-// Timeout sets the timeout for the prober.
-func Timeout(timeout time.Duration) func(*Probe) {
-	return func(p *Probe) {
-		p.Timeout = timeout
 	}
 }
 
@@ -308,7 +299,7 @@ func (p *Probe) runProbe() {
 	case r := <-c:
 		// We got a result of some sort from the prober.
 		p.handleResult(r)
-		wait := p.Timeout - time.Since(start)
+		wait := p.Interval - time.Since(start)
 		glog.V(2).Infof("[%s] needs to sleep %v more here\n", p.Name, wait)
 		time.Sleep(wait)
 	case <-time.After(p.Interval):
@@ -345,9 +336,6 @@ func (p1 *Probe) Equal(p2 *Probe) bool {
 		return false
 	}
 	if p1.Interval != p2.Interval {
-		return false
-	}
-	if p1.Timeout != p2.Timeout {
 		return false
 	}
 	if p1.Alerting != p2.Alerting {
