@@ -38,6 +38,9 @@ import (
 )
 
 var (
+	// TODO(hkjn): Replace this with a global "max 1 alerts per X
+	// minutes" setting? If we have 1000 probes, we still would get 1000
+	// alerts every 15 min..
 	MaxAlertFrequency = time.Minute * 15 // never send alerts more often than this
 	DefaultInterval   = flag.Duration("probe_interval", time.Second*61, "duration to pause between prober runs")
 	logDir            = os.TempDir()          // logging directory
@@ -485,11 +488,11 @@ func (p *Probe) handleResult(r Result) {
 func (p *Probe) sendAlert() {
 	err := p.Alert(p.Name, p.Desc, p.Badness, p.Records)
 	if err != nil {
-		glog.Errorf("[%s] failed to alert: %v", p.Name, err)
+		glog.Errorf("[%s] Failed to alert: %v", p.Name, err)
 		// Note: We don't reset badness here; next cycle we'll keep
 		// trying to send the alert.
 	} else {
-		glog.Infof("[%s] sent alert email, resetting badness to 0\n", p.Name)
+		glog.Infof("[%s] Called Alert(), resetting badness to 0\n", p.Name)
 		p.LastAlert = time.Now().UTC()
 		p.Badness = p.minBadness
 	}
