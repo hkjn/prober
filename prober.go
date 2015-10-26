@@ -534,6 +534,17 @@ func (p *Probe) logResult(res Result) {
 	}
 }
 
+// Silenced returns the currently silenced probes, if any.
+func (ps Probes) Silenced() Probes {
+	var silenced Probes
+	for _, p := range ps {
+		if p.Silenced() {
+			silenced = append(silenced, p)
+		}
+	}
+	return silenced
+}
+
 // Equal returns true if both Probes are equal.
 func (ps1 Probes) Equal(ps2 Probes) bool {
 	if len(ps1) != len(ps2) {
