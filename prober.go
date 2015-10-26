@@ -98,7 +98,7 @@ type (
 	// Option is a setting for an individual prober.
 	Option func(*Probe)
 
-	// selectedProbes is a set of probes to be enabled/disabled.
+	// selectedProbes is a set of probes that flags specify should be enabled/disabled.
 	selectedProbes map[string]bool
 
 	// Probe is a stateful representation of repeated probe runs.
