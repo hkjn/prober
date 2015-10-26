@@ -107,18 +107,22 @@ type (
 		Name, Desc string // name, description of the probe
 		// If badness reaches alert threshold, an alert email is sent and
 		// alertThreshold resets.
-		Badness    int
-		Interval   time.Duration // how often to probe
-		Alerting   bool          // whether this probe is currently alerting
-		LastAlert  time.Time     // time of last alert sent, if any
-		Disabled   bool          // whether this probe is disabled
-		Records    Records       // historical records of probe runs
-		minBadness int           // minimum allowed `badness` value
-		badnessInc int           // how much to increment `badness` on failure
-		badnessDec int           // how much to decrement `badness` on success
-		reportFn   func(Result)  // function to call to report probe results
+		Badness       int
+		Interval      time.Duration // how often to probe
+		Alerting      bool          // whether this probe is currently alerting
+		LastAlert     time.Time     // time of last alert sent, if any
+		Disabled      bool          // whether this probe is disabled
+		SilencedUntil SilenceTime   // the earliest time this probe can alert
+		Records       Records       // historical records of probe runs
+		minBadness    int           // minimum allowed `badness` value
+		badnessInc    int           // how much to increment `badness` on failure
+		badnessDec    int           // how much to decrement `badness` on success
+		reportFn      func(Result)  // function to call to report probe results
 	}
 	Probes []*Probe
+	// SilenceTime represents a Time until which the probe is
+	// silenced. It exists to provide a custom String() method.
+	SilenceTime struct{ time.Time }
 )
 
 // String returns the English name of the result.
@@ -327,6 +331,22 @@ func (p *Probe) addRecord(r Record) {
 	glog.V(2).Infof("[%s] buffer is now %d elements\n", p.Name, len(p.Records))
 }
 
+// Silenced returns true if the probe is currently silenced.
+func (p *Probe) Silenced() bool {
+	return p.SilencedUntil.After(time.Now())
+}
+
+// Silenced returns true if the probe is currently silenced.
+func (p *Probe) Silence(until time.Time) {
+	glog.V(1).Infof("[%s] is now silenced until %v\n", p.Name, until)
+	p.SilencedUntil = SilenceTime{until}
+}
+
+// String returns a human-readable description of the time until which a probe is silenced.
+func (t SilenceTime) String() string {
+	return fmt.Sprintf("%s (%f hrs more)", t.Format(time.RFC822), t.Sub(time.Now()).Hours())
+}
+
 // Equal returns true if the probes are equal.
 func (p1 *Probe) Equal(p2 *Probe) bool {
 	if p2 == nil {
@@ -348,6 +368,9 @@ func (p1 *Probe) Equal(p2 *Probe) bool {
 		return false
 	}
 	if p1.Disabled != p2.Disabled {
+		return false
+	}
+	if !p1.SilencedUntil.Equal(p2.SilencedUntil.Time) {
 		return false
 	}
 	if !p1.Records.Equal(p2.Records) {
@@ -456,15 +479,20 @@ func (p *Probe) handleResult(r Result) {
 
 	p.Alerting = true
 	if *alertsDisabled {
-		glog.Infof("[%s] would now be alerting, but alerts are supressed\n", p.Name)
+		glog.Infof("[%s] would now be alerting, but alerts are disabled\n", p.Name)
 		return
 	}
 
-	glog.Infof("[%s] is alerting\n", p.Name)
 	if time.Since(p.LastAlert) < MaxAlertFrequency {
 		glog.V(1).Infof("[%s] will not alert, since last alert was sent %v back\n", p.Name, time.Since(p.LastAlert))
 		return
 	}
+	if p.Silenced() {
+		glog.V(1).Infof("[%s] is silenced until %v, will not alert\n", p.Name, p.SilencedUntil)
+		return
+	}
+
+	glog.Infof("[%s] is alerting\n", p.Name)
 	// Send alert notification in goroutine to not block further
 	// probing.
 	// TODO: There is a race condition here, if email sending takes long
@@ -533,13 +561,19 @@ func (ps Probes) Less(i, j int) bool {
 		// Disabled probes sort after (higher value than) non-disabled ones.
 		return ps[j].Disabled
 	}
-	if ps[i].Alerting != ps[j].Alerting {
-		// Alerting probes sort before (lower value than) non-alerting ones.
-		return ps[i].Alerting
+	if !ps[i].SilencedUntil.Equal(ps[j].SilencedUntil.Time) {
+		// Probes that are silenced for a longer time sort after (higher
+		// value than) ones that are silenced shorter. (Possibly not
+		// silenced at all, but that depends on the current time.)
+		return ps[i].SilencedUntil.Before(ps[j].SilencedUntil.Time)
 	}
 	if ps[i].Badness != ps[j].Badness {
 		// Probes with higher badness sort before ones with lower badness.
 		return ps[i].Badness > ps[j].Badness
+	}
+	if ps[i].Alerting != ps[j].Alerting {
+		// Alerting probes sort before (lower value than) non-alerting ones.
+		return ps[i].Alerting
 	}
 	if ps[i].LastAlert != ps[j].LastAlert {
 		// Probes that alerted longer ago sort after ones that alerted
