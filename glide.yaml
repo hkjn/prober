@@ -1,7 +1,0 @@
-package: main
-import:
-  - package: github.com/golang/glog
-  - package: gopkg.in/yaml.v2
-  - package: hkjn.me/timeutils
-    vcs: git
-    repo: git@github.com:hkjn/timeutils.git
