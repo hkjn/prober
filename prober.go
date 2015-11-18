@@ -336,10 +336,10 @@ func (p *Probe) Silenced() bool {
 	return p.SilencedUntil.After(time.Now())
 }
 
-// Silenced returns true if the probe is currently silenced.
+// Silence silences the Probe until specified time.
 func (p *Probe) Silence(until time.Time) {
-	glog.V(1).Infof("[%s] is now silenced until %v\n", p.Name, until)
 	p.SilencedUntil = SilenceTime{until}
+	glog.V(1).Infof("[%s] is now silenced until %v\n", p.Name, until)
 }
 
 // String returns a human-readable description of the time until which a probe is silenced.
