@@ -294,7 +294,36 @@ func (p *Probe) Run() {
 
 // String returns a human-readable representation of the Probe.
 func (p *Probe) String() string {
-	return fmt.Sprintf("&Probe{Name: %q, Desc: %q}", p.Name, p.Desc)
+	parts := []string{
+		fmt.Sprintf("Name: %q", p.Name),
+		fmt.Sprintf("Desc: %q", p.Desc),
+		fmt.Sprintf("Records: %s", p.Records),
+	}
+	if p.Badness != p.minBadness {
+		parts = append(parts, fmt.Sprintf("Badness: %d", p.Badness))
+	}
+	if p.Interval != *DefaultInterval {
+		parts = append(parts, fmt.Sprintf("Interval: %v", p.Interval))
+	}
+	if p.Alerting {
+		parts = append(parts, fmt.Sprintf("Alerting: true"))
+	}
+	if !p.LastAlert.Equal(time.Time{}) {
+		parts = append(parts, fmt.Sprintf("LastAlert: %v", p.LastAlert))
+	}
+	if p.Disabled {
+		parts = append(parts, fmt.Sprintf("Disabled: true"))
+	}
+	if !p.SilencedUntil.Equal(time.Time{}) {
+		parts = append(parts, fmt.Sprintf("SilencedUntil: %v", p.SilencedUntil))
+	}
+	if p.minBadness != defaultMinBadness {
+		parts = append(parts, fmt.Sprintf("minBadness: %v", p.minBadness))
+	}
+	if p.badnessInc != defaultBadnessInc {
+		parts = append(parts, fmt.Sprintf("badnessInc: %v", p.badnessInc))
+	}
+	return fmt.Sprintf("&Probe{%s}", strings.Join(parts, ", "))
 }
 
 // enabledInFlags returns true if this probe is enabled via -only_probes or -disabled_probes flags.
