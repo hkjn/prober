@@ -344,7 +344,8 @@ func enabledInFlags(name string) bool {
 	return true
 }
 
-// runProbe runs the probe once.
+// runProbe runs the probe once, returning the amount of time to wait
+// before the next runProbe() run is due.
 func (p *Probe) runProbe() time.Duration {
 	c := make(chan Result, 1)
 	start := time.Now().UTC()
@@ -406,6 +407,12 @@ func (p1 *Probe) Equal(p2 *Probe) bool {
 	if p1.Name != p2.Name {
 		return false
 	}
+	if p1.Desc != p2.Desc {
+		return false
+	}
+	if !p1.Records.Equal(p2.Records) {
+		return false
+	}
 	if p1.Badness != p2.Badness {
 		return false
 	}
@@ -422,9 +429,6 @@ func (p1 *Probe) Equal(p2 *Probe) bool {
 		return false
 	}
 	if !p1.SilencedUntil.Equal(p2.SilencedUntil.Time) {
-		return false
-	}
-	if !p1.Records.Equal(p2.Records) {
 		return false
 	}
 	if p1.minBadness != p2.minBadness {
@@ -455,6 +459,15 @@ func (rs Records) Len() int           { return len(rs) }
 func (rs Records) Swap(i, j int)      { rs[i], rs[j] = rs[j], rs[i] }
 func (rs Records) Less(i, j int) bool { return rs[i].Timestamp.Before(rs[j].Timestamp) }
 
+func (rs Records) String() string {
+	s := make([]string, len(rs))
+	for i, r := range rs {
+		s[i] = r.String()
+	}
+
+	return strings.Join(s, ", ")
+}
+
 // RecentFailures returns only recent probe failures among the records.
 func (pr Records) RecentFailures() Records {
 	failures := make(Records, 0)
@@ -465,6 +478,14 @@ func (pr Records) RecentFailures() Records {
 	}
 	sort.Sort(sort.Reverse(failures))
 	return failures
+}
+
+func (r Record) String() string {
+	return fmt.Sprintf(
+		"Record{Timestamp: %v, TimeMillis: %q, Result: %s}",
+		r.Timestamp,
+		r.TimeMillis,
+		r.Result)
 }
 
 // Ago describes the duration since the record occured.
@@ -489,7 +510,7 @@ func (r1 Record) Equal(r2 Record) bool {
 	if r1.TimeMillis != r2.TimeMillis {
 		return false
 	}
-	if r1.Result != r2.Result {
+	if !r1.Result.Equal(r2.Result) {
 		return false
 	}
 	return true
@@ -538,6 +559,7 @@ func (p *Probe) handleResult(r Result) {
 		glog.V(1).Infof("[%s] will not alert, since last alert was sent %v back\n", p.Name, time.Since(p.LastAlert))
 		return
 	}
+
 	if p.Silenced() {
 		glog.V(1).Infof("[%s] is silenced until %v, will not alert\n", p.Name, p.SilencedUntil)
 		return
@@ -637,7 +659,7 @@ func (ps Probes) Less(i, j int) bool {
 		// Alerting probes sort before (lower value than) non-alerting ones.
 		return ps[i].Alerting
 	}
-	if ps[i].LastAlert != ps[j].LastAlert {
+	if !ps[i].LastAlert.Equal(ps[j].LastAlert) {
 		// Probes that alerted longer ago sort after ones that alerted
 		// more recently.
 		return ps[i].LastAlert.After(ps[j].LastAlert)
