@@ -128,13 +128,6 @@ func TestProbes_Less(t *testing.T) {
 }
 
 func TestProbes_Sort(t *testing.T) {
-	parseTime := func(v string) SilenceTime {
-		ts, err := time.Parse(time.RFC822, v)
-		if err != nil {
-			t.Fatalf("buggy test, can't parse time: %v", err)
-		}
-		return SilenceTime{ts}
-	}
 	cases := []struct {
 		in   Probes
 		want Probes
