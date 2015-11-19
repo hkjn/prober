@@ -1,14 +1,220 @@
 package prober
 
 import (
+	"errors"
+	"log"
 	"sort"
 	"testing"
 	"time"
 )
 
-// TODO(hkjn): Add tests that start a bunch of probes in goroutines,
-// expects them to have Probe() called, Badness changed, Alert()
-// should be called, etc.
+// fakeTime implements timeT for tests by pretending it's always the specified Time.
+type fakeTime struct{ time.Time }
+
+func (ft fakeTime) Now() time.Time {
+	return ft.Time
+}
+func (fakeTime) Sleep(d time.Duration) {
+	log.Printf("fakeTime.Sleep(%v)\n", d)
+}
+
+type testProber struct{ result Result }
+
+func (p testProber) Probe() Result                                               { return p.result }
+func (p testProber) Alert(name, desc string, badness int, records Records) error { return nil }
+
+func TestProbe_runProbe(t *testing.T) {
+	type (
+		want struct {
+			wait     time.Duration
+			state    *Probe
+			silenced bool
+		}
+	)
+	parseTime := func(s string) time.Time {
+		ft, err := time.Parse(time.RFC822, s)
+		if err != nil {
+			log.Fatalf("FATAL: Couldn't parse time: %v\n", err)
+		}
+		return ft
+	}
+	cases := []struct {
+		in   *Probe
+		want want
+	}{
+		{
+			in: &Probe{
+				Prober:     testProber{Passed()},
+				Name:       "TestProber1",
+				Desc:       "A test prober.",
+				Records:    Records{},
+				Badness:    0,
+				badnessInc: 10,
+				Interval:   time.Minute,
+				t:          fakeTime{parseTime("19 Nov 98 15:14 UTC")},
+			},
+			want: want{
+				wait: *DefaultInterval,
+				state: &Probe{
+					Prober: testProber{Passed()},
+					Name:   "TestProber1",
+					Desc:   "A test prober.",
+					Records: Records{
+						// TODO(hkjn): Clean up Timestamp vs TimeMillis.
+						Record{
+							Timestamp:  parseTime("19 Nov 98 15:14 UTC"),
+							TimeMillis: "Nov 19 15:14:00.000",
+							Result:     Passed(),
+						},
+					},
+					Badness:    0,
+					badnessInc: 10,
+					Interval:   time.Minute,
+					t:          fakeTime{parseTime("19 Nov 98 15:14 UTC")},
+				},
+			},
+		},
+		{
+			in: &Probe{
+				Prober:     testProber{FailedWith(errors.New("Test probe failing on purpose"))},
+				Name:       "TestProber2",
+				Desc:       "A test prober that fails.",
+				Records:    Records{},
+				Badness:    0,
+				badnessInc: 10,
+				Interval:   time.Minute,
+				t:          fakeTime{parseTime("19 Nov 98 15:14 UTC")},
+			},
+			want: want{
+				wait: *DefaultInterval,
+				state: &Probe{
+					Name: "TestProber2",
+					Desc: "A test prober that fails.",
+					Records: Records{
+						Record{
+							Timestamp:  parseTime("19 Nov 98 15:14 UTC"),
+							TimeMillis: "Nov 19 15:14:00.000",
+							Result:     FailedWith(errors.New("Test probe failing on purpose")),
+						},
+					},
+					Badness:    defaultBadnessInc,
+					badnessInc: defaultBadnessInc,
+					Interval:   *DefaultInterval,
+				},
+			},
+		},
+		{
+			in: &Probe{
+				Prober:     testProber{FailedWith(errors.New("Test probe failing on purpose"))},
+				Name:       "TestProber3",
+				Desc:       "A test prober that alerts.",
+				Records:    Records{},
+				Badness:    90,
+				badnessInc: 10,
+				Interval:   time.Minute,
+				t:          fakeTime{parseTime("19 Nov 98 15:14 UTC")},
+			},
+			want: want{
+				wait: *DefaultInterval,
+				state: &Probe{
+					Name: "TestProber3",
+					Desc: "A test prober that alerts.",
+					Records: Records{
+						Record{
+							Timestamp:  parseTime("19 Nov 98 15:14 UTC"),
+							TimeMillis: "Nov 19 15:14:00.000",
+							Result:     FailedWith(errors.New("Test probe failing on purpose")),
+						},
+					},
+					badnessInc: 10,
+					Badness:    100,
+					Alerting:   true,
+					Interval:   time.Minute,
+				},
+			},
+		},
+		{
+			in: &Probe{
+				Prober:        testProber{FailedWith(errors.New("Test probe failing on purpose"))},
+				Name:          "TestProber4",
+				Desc:          "A test prober that is silenced.",
+				Records:       Records{},
+				SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:30 UTC")},
+				Badness:       90,
+				badnessInc:    10,
+				Interval:      time.Minute,
+				t:             fakeTime{parseTime("19 Nov 98 15:14 UTC")},
+			},
+			want: want{
+				wait: *DefaultInterval,
+				state: &Probe{
+					Name: "TestProber4",
+					Desc: "A test prober that is silenced.",
+					Records: Records{
+						Record{
+							Timestamp:  parseTime("19 Nov 98 15:14 UTC"),
+							TimeMillis: "Nov 19 15:14:00.000",
+							Result:     FailedWith(errors.New("Test probe failing on purpose")),
+						},
+					},
+					badnessInc:    10,
+					Badness:       0,
+					Alerting:      true,
+					SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:30 UTC")},
+					Interval:      time.Minute,
+				},
+				silenced: true,
+			},
+		},
+		{
+			in: &Probe{
+				Prober:        testProber{FailedWith(errors.New("TestProber5 failing on purpose"))},
+				Name:          "TestProber5",
+				Desc:          "A test prober that was recently silenced.",
+				Records:       Records{},
+				SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:13 UTC")},
+				Badness:       90,
+				badnessInc:    10,
+				Interval:      time.Minute,
+				t:             fakeTime{parseTime("19 Nov 98 15:14 UTC")},
+			},
+			want: want{
+				wait: *DefaultInterval,
+				state: &Probe{
+					Name: "TestProber5",
+					Desc: "A test prober that was recently silenced.",
+					Records: Records{
+						Record{
+							Timestamp:  parseTime("19 Nov 98 15:14 UTC"),
+							TimeMillis: "Nov 19 15:14:00.000",
+							Result:     FailedWith(errors.New("TestProber5 failing on purpose")),
+						},
+					},
+					badnessInc:    10,
+					Badness:       100,
+					Alerting:      true,
+					SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:13 UTC")},
+					Interval:      time.Minute,
+				},
+				silenced: false,
+			},
+		},
+	}
+
+	for i, tt := range cases {
+		got := tt.in.runProbe()
+		if got != tt.want.wait {
+			t.Errorf("[%d] %+v.runProbe() => %v; want %v\n",
+				i, tt.in, got, tt.want.wait)
+		} else if !tt.in.Equal(tt.want.state) {
+			t.Errorf("[%d] Got probe in state:\n%+v\nWant:\n%+v\n",
+				i, tt.in, tt.want.state)
+		} else if tt.in.Silenced() != tt.want.silenced {
+			t.Errorf("[%d] %v.Silenced()=%v, want %v\n",
+				i, tt.in, tt.in.Silenced(), tt.want.silenced)
+		}
+	}
+}
 
 func TestProbes_Less(t *testing.T) {
 	parseTime := func(v string) SilenceTime {
