@@ -128,6 +128,23 @@ type (
 // String returns the English name of the result.
 func (r ResultCode) String() string { return results[r] }
 
+// String returns a human-readable representation of the Result.
+func (r Result) String() string {
+	parts := []string{
+		fmt.Sprintf("Code: %q", r.Code),
+	}
+	if r.Error != nil {
+		parts = append(parts, fmt.Sprintf("Error: %q", r.Error))
+	}
+	if r.Info != "" {
+		parts = append(parts, fmt.Sprintf("Info: %q", r.Info))
+	}
+	if r.InfoUrl != "" {
+		parts = append(parts, fmt.Sprintf("InfoUrl: %q", r.InfoUrl))
+	}
+	return fmt.Sprintf("Result{%s}", strings.Join(parts, ", "))
+}
+
 // Passed returns whether the probe result indicates a pass.
 func (r Result) Passed() bool { return r.Code == Pass }
 
