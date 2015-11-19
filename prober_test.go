@@ -8,17 +8,15 @@ import (
 	"time"
 )
 
-// fakeTime implements timeT for tests by pretending it's always the specified Time.
-type fakeTime struct{ time.Time }
+type (
+	// fakeTime implements timeT for tests by pretending it's always the specified Time.
+	fakeTime struct{ time.Time }
+	// testProber is a Probe implementation that retrurns specified Result when Probe() is called.
+	testProber struct{ result Result }
+)
 
-func (ft fakeTime) Now() time.Time {
-	return ft.Time
-}
-func (fakeTime) Sleep(d time.Duration) {
-	log.Printf("fakeTime.Sleep(%v)\n", d)
-}
-
-type testProber struct{ result Result }
+func (ft fakeTime) Now() time.Time     { return ft.Time }
+func (fakeTime) Sleep(d time.Duration) {}
 
 func (p testProber) Probe() Result                                               { return p.result }
 func (p testProber) Alert(name, desc string, badness int, records Records) error { return nil }
@@ -159,7 +157,6 @@ func TestProbe_runProbe(t *testing.T) {
 					},
 					badnessInc:    10,
 					Badness:       0,
-					Alerting:      true,
 					SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:30 UTC")},
 					Interval:      time.Minute,
 				},
@@ -197,6 +194,38 @@ func TestProbe_runProbe(t *testing.T) {
 					Interval:      time.Minute,
 				},
 				silenced: false,
+			},
+		},
+		{
+			in: &Probe{
+				Prober:        testProber{FailedWith(errors.New("TestProber6 failing on purpose"))},
+				Name:          "TestProber6",
+				Desc:          "A test prober that is silenced and not alerting.",
+				Records:       Records{},
+				SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:30 UTC")},
+				Badness:       50,
+				badnessInc:    10,
+				Interval:      time.Minute,
+				t:             fakeTime{parseTime("19 Nov 98 15:14 UTC")},
+			},
+			want: want{
+				wait: *DefaultInterval,
+				state: &Probe{
+					Name: "TestProber6",
+					Desc: "A test prober that is silenced and not alerting.",
+					Records: Records{
+						Record{
+							Timestamp:  parseTime("19 Nov 98 15:14 UTC"),
+							TimeMillis: "Nov 19 15:14:00.000",
+							Result:     FailedWith(errors.New("TestProber6 failing on purpose")),
+						},
+					},
+					badnessInc:    10,
+					Badness:       0,
+					SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:30 UTC")},
+					Interval:      time.Minute,
+				},
+				silenced: true,
 			},
 		},
 	}

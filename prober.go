@@ -558,6 +558,11 @@ func (p *Probe) handleResult(r Result) {
 	}
 	p.logResult(r)
 
+	if p.Silenced() {
+		glog.V(1).Infof("[%s] is silenced until %v, will not alert, resetting badness to %d\n", p.Name, p.SilencedUntil, p.minBadness)
+		p.Badness = p.minBadness
+	}
+
 	if p.Badness < *alertThreshold {
 		p.Alerting = false
 		return
@@ -571,12 +576,6 @@ func (p *Probe) handleResult(r Result) {
 
 	if time.Since(p.LastAlert) < MaxAlertFrequency {
 		glog.V(1).Infof("[%s] will not alert, since last alert was sent %v back\n", p.Name, time.Since(p.LastAlert))
-		return
-	}
-
-	if p.Silenced() {
-		glog.V(1).Infof("[%s] is silenced until %v, will not alert, resetting badness to %d\n", p.Name, p.SilencedUntil, p.minBadness)
-		p.Badness = p.minBadness
 		return
 	}
 
