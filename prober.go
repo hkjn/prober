@@ -585,7 +585,7 @@ func (p *Probe) sendAlert() {
 		// Note: We don't reset badness here; next cycle we'll keep
 		// trying to send the alert.
 	} else {
-		glog.Infof("[%s] Called Alert(), resetting badness to 0\n", p.Name)
+		glog.Infof("[%s] Called Alert(), resetting badness to %d\n", p.Name, p.minBadness)
 		p.LastAlert = time.Now().UTC()
 		p.Badness = p.minBadness
 	}
