@@ -155,13 +155,16 @@ func (r1 Result) Equal(r2 Result) bool {
 	if r1.Info != r2.Info {
 		return false
 	}
-	if r1.Error != nil {
-		return r2.Error != nil && r1.Error.Error() == r2.Error.Error()
+	equalError := func(err1, err2 error) bool {
+		if err1 == nil {
+			return err2 == nil
+		}
+		if err2 == nil {
+			return err1 == nil
+		}
+		return err1.Error() == err2.Error()
 	}
-	if r2.Error != nil {
-		return r1.Error != nil && r1.Error.Error() == r2.Error.Error()
-	}
-	return true
+	return equalError(r1.Error, r2.Error)
 }
 
 // FailedWith returns a Result representing failure with given error.
