@@ -118,12 +118,25 @@ type (
 		badnessInc    int           // how much to increment `badness` on failure
 		badnessDec    int           // how much to decrement `badness` on success
 		reportFn      func(Result)  // function to call to report probe results
+		t             timeT
 	}
 	Probes []*Probe
 	// SilenceTime represents a Time until which the probe is
 	// silenced. It exists to provide a custom String() method.
 	SilenceTime struct{ time.Time }
+
+	// timeT represents time-dependent functionality.
+	timeT interface {
+		Now() time.Time
+		Sleep(time.Duration)
+	}
 )
+
+// realTime implements timeT for actual time.
+type realTime struct{}
+
+func (realTime) Now() time.Time        { return time.Now() }
+func (realTime) Sleep(d time.Duration) { time.Sleep(d) }
 
 // String returns the English name of the result.
 func (r ResultCode) String() string { return results[r] }
@@ -242,6 +255,7 @@ func NewProbe(p Prober, name, desc string, options ...Option) *Probe {
 		minBadness: defaultMinBadness,
 		badnessInc: defaultBadnessInc,
 		badnessDec: defaultBadnessDec,
+		t:          realTime{},
 	}
 	for _, opt := range options {
 		opt(probe)
@@ -289,7 +303,7 @@ func (p *Probe) Run() {
 
 	for {
 		wait := p.runProbe()
-		time.Sleep(wait)
+		p.t.Sleep(wait)
 	}
 }
 
@@ -348,7 +362,7 @@ func enabledInFlags(name string) bool {
 // before the next runProbe() run is due.
 func (p *Probe) runProbe() time.Duration {
 	c := make(chan Result, 1)
-	start := time.Now().UTC()
+	start := p.t.Now()
 	go func() {
 		glog.Infof("[%s] Probing..\n", p.Name)
 		c <- p.Probe()
@@ -357,7 +371,7 @@ func (p *Probe) runProbe() time.Duration {
 	case r := <-c:
 		// We got a result of some sort from the prober.
 		p.handleResult(r)
-		wait := p.Interval - time.Since(start)
+		wait := p.Interval - p.t.Now().Sub(start)
 		glog.V(2).Infof("[%s] needs to sleep %v more here\n", p.Name, wait)
 		return wait
 	case <-time.After(p.Interval):
@@ -385,7 +399,7 @@ func (p *Probe) addRecord(r Record) {
 
 // Silenced returns true if the probe is currently silenced.
 func (p *Probe) Silenced() bool {
-	return p.SilencedUntil.After(time.Now())
+	return p.SilencedUntil.After(p.t.Now())
 }
 
 // Silence silences the Probe until specified time.
@@ -586,7 +600,7 @@ func (p *Probe) sendAlert() {
 		// trying to send the alert.
 	} else {
 		glog.Infof("[%s] Called Alert(), resetting badness to %d\n", p.Name, p.minBadness)
-		p.LastAlert = time.Now().UTC()
+		p.LastAlert = p.t.Now()
 		p.Badness = p.minBadness
 	}
 }
@@ -594,7 +608,7 @@ func (p *Probe) sendAlert() {
 // logResult logs the result of a probe run.
 func (p *Probe) logResult(res Result) {
 	onceOpen.Do(openLog)
-	now := time.Now().UTC()
+	now := p.t.Now()
 	rec := Record{
 		Timestamp:  now,
 		TimeMillis: now.Format(time.StampMilli),
