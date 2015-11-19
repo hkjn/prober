@@ -561,7 +561,8 @@ func (p *Probe) handleResult(r Result) {
 	}
 
 	if p.Silenced() {
-		glog.V(1).Infof("[%s] is silenced until %v, will not alert\n", p.Name, p.SilencedUntil)
+		glog.V(1).Infof("[%s] is silenced until %v, will not alert, resetting badness to %d\n", p.Name, p.SilencedUntil, p.minBadness)
+		p.Badness = p.minBadness
 		return
 	}
 
