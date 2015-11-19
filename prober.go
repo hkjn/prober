@@ -42,7 +42,7 @@ var (
 	// minutes" setting? If we have 1000 probes, we still would get 1000
 	// alerts every 15 min..
 	MaxAlertFrequency = time.Minute * 15 // never call Alert() more often than this
-	DefaultInterval   = flag.Duration("probe_interval", time.Second*61, "duration to pause between prober runs")
+	DefaultInterval   = flag.Duration("probe_interval", time.Minute, "duration to pause between prober runs")
 	logDir            = os.TempDir()          // logging directory
 	logName           = "prober.outcomes.log" // name of logging f1ile
 	alertThreshold    = flag.Int("alert_threshold", 100, "level of 'badness' before alerting")
