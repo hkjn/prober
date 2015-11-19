@@ -74,7 +74,7 @@ func TestProbe_runProbe(t *testing.T) {
 		},
 		{
 			in: &Probe{
-				Prober:     testProber{FailedWith(errors.New("Test probe failing on purpose"))},
+				Prober:     testProber{FailedWith(errors.New("TestProber2 failing on purpose"))},
 				Name:       "TestProber2",
 				Desc:       "A test prober that fails.",
 				Records:    Records{},
@@ -92,7 +92,7 @@ func TestProbe_runProbe(t *testing.T) {
 						Record{
 							Timestamp:  parseTime("19 Nov 98 15:14 UTC"),
 							TimeMillis: "Nov 19 15:14:00.000",
-							Result:     FailedWith(errors.New("Test probe failing on purpose")),
+							Result:     FailedWith(errors.New("TestProber2 failing on purpose")),
 						},
 					},
 					Badness:    defaultBadnessInc,
@@ -103,7 +103,7 @@ func TestProbe_runProbe(t *testing.T) {
 		},
 		{
 			in: &Probe{
-				Prober:     testProber{FailedWith(errors.New("Test probe failing on purpose"))},
+				Prober:     testProber{FailedWith(errors.New("TestProber3 failing on purpose"))},
 				Name:       "TestProber3",
 				Desc:       "A test prober that alerts.",
 				Records:    Records{},
@@ -121,7 +121,7 @@ func TestProbe_runProbe(t *testing.T) {
 						Record{
 							Timestamp:  parseTime("19 Nov 98 15:14 UTC"),
 							TimeMillis: "Nov 19 15:14:00.000",
-							Result:     FailedWith(errors.New("Test probe failing on purpose")),
+							Result:     FailedWith(errors.New("TestProber3 failing on purpose")),
 						},
 					},
 					badnessInc: 10,
@@ -133,7 +133,7 @@ func TestProbe_runProbe(t *testing.T) {
 		},
 		{
 			in: &Probe{
-				Prober:        testProber{FailedWith(errors.New("Test probe failing on purpose"))},
+				Prober:        testProber{FailedWith(errors.New("TestProber4 failing on purpose"))},
 				Name:          "TestProber4",
 				Desc:          "A test prober that is silenced.",
 				Records:       Records{},
@@ -152,7 +152,7 @@ func TestProbe_runProbe(t *testing.T) {
 						Record{
 							Timestamp:  parseTime("19 Nov 98 15:14 UTC"),
 							TimeMillis: "Nov 19 15:14:00.000",
-							Result:     FailedWith(errors.New("Test probe failing on purpose")),
+							Result:     FailedWith(errors.New("TestProber4 failing on purpose")),
 						},
 					},
 					badnessInc:    10,
