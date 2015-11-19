@@ -288,7 +288,8 @@ func (p *Probe) Run() {
 	}
 
 	for {
-		p.runProbe()
+		wait := p.runProbe()
+		time.Sleep(wait)
 	}
 }
 
@@ -344,7 +345,7 @@ func enabledInFlags(name string) bool {
 }
 
 // runProbe runs the probe once.
-func (p *Probe) runProbe() {
+func (p *Probe) runProbe() time.Duration {
 	c := make(chan Result, 1)
 	start := time.Now().UTC()
 	go func() {
@@ -357,7 +358,7 @@ func (p *Probe) runProbe() {
 		p.handleResult(r)
 		wait := p.Interval - time.Since(start)
 		glog.V(2).Infof("[%s] needs to sleep %v more here\n", p.Name, wait)
-		time.Sleep(wait)
+		return wait
 	case <-time.After(p.Interval):
 		// Probe didn't finish in time for us to run the next one, report as failure.
 		glog.Errorf("[%s] Timed out\n", p.Name)
@@ -366,6 +367,7 @@ func (p *Probe) runProbe() {
 				p.Name,
 				p.Interval.Seconds()))
 		p.handleResult(timeoutFail)
+		return time.Duration(0)
 	}
 }
 
