@@ -281,14 +281,14 @@ func SuccessReward(badnessDec int) func(*Probe) {
 func (p *Probe) Run() {
 	glog.Infof("[%s] Starting..\n", p.Name)
 
+	if !enabledInFlags(p.Name) {
+		p.Disabled = true
+		glog.Infof("[%s] is disabled, will now exit", p.Name)
+		return
+	}
+
 	for {
-		if p.enabled() {
-			p.runProbe()
-		} else {
-			p.Disabled = true
-			glog.Infof("[%s] is disabled, will now exit", p.Name)
-			return
-		}
+		p.runProbe()
 	}
 }
 
@@ -297,17 +297,17 @@ func (p *Probe) String() string {
 	return fmt.Sprintf("&Probe{Name: %q, Desc: %q}", p.Name, p.Desc)
 }
 
-// enabled returns true if this probe is enabled.
-func (p *Probe) enabled() bool {
+// enabledInFlags returns true if this probe is enabled via -only_probes or -disabled_probes flags.
+func enabledInFlags(name string) bool {
 	if len(onlyProbes) > 0 {
-		if _, ok := onlyProbes[p.Name]; ok {
+		if _, ok := onlyProbes[name]; ok {
 			// We only want specific probes, but this probe is one of them.
 			return true
 		}
 		return false
 	}
 
-	if _, ok := disabledProbes[p.Name]; ok {
+	if _, ok := disabledProbes[name]; ok {
 		// This probe is explicitly disabled.
 		return false
 	}
