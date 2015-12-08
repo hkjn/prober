@@ -323,11 +323,11 @@ func (p *Probe) String() string {
 		parts = append(parts, fmt.Sprintf("Interval: %v", p.Interval))
 	}
 	if p.IsAlerting() {
-		parts = append(parts, fmt.Sprintf("Alerting: true"))
+		parts = append(parts, fmt.Sprintf("alerting: true"))
 	}
 	lastAlert := p.getLastAlert()
 	if !lastAlert.IsZero() {
-		parts = append(parts, fmt.Sprintf("LastAlert: %v", lastAlert))
+		parts = append(parts, fmt.Sprintf("lastAlert: %v", lastAlert))
 	}
 	if p.Disabled {
 		parts = append(parts, fmt.Sprintf("Disabled: true"))
