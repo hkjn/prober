@@ -109,8 +109,6 @@ type (
 		// alertThreshold resets.
 		Badness       int
 		Interval      time.Duration // how often to probe
-		Alerting      bool          // whether this probe is currently alerting
-		LastAlert     time.Time     // time of last alert sent, if any
 		Disabled      bool          // whether this probe is disabled
 		SilencedUntil SilenceTime   // the earliest time this probe can alert
 		Records       Records       // historical records of probe runs
@@ -119,6 +117,9 @@ type (
 		badnessDec    int           // how much to decrement `badness` on success
 		reportFn      func(Result)  // function to call to report probe results
 		t             timeT
+		alerting      bool         // whether this probe is currently alerting
+		lastAlert     time.Time    // time of last alert sent, if any
+		alertLock     sync.RWMutex // protects reads and writes to alerting
 	}
 	Probes []*Probe
 	// SilenceTime represents a Time until which the probe is
@@ -256,6 +257,7 @@ func NewProbe(p Prober, name, desc string, options ...Option) *Probe {
 		badnessInc: defaultBadnessInc,
 		badnessDec: defaultBadnessDec,
 		t:          realTime{},
+		alertLock:  sync.RWMutex{},
 	}
 	for _, opt := range options {
 		opt(probe)
@@ -320,11 +322,12 @@ func (p *Probe) String() string {
 	if p.Interval != *DefaultInterval {
 		parts = append(parts, fmt.Sprintf("Interval: %v", p.Interval))
 	}
-	if p.Alerting {
+	if p.IsAlerting() {
 		parts = append(parts, fmt.Sprintf("Alerting: true"))
 	}
-	if !p.LastAlert.Equal(time.Time{}) {
-		parts = append(parts, fmt.Sprintf("LastAlert: %v", p.LastAlert))
+	lastAlert := p.getLastAlert()
+	if !lastAlert.IsZero() {
+		parts = append(parts, fmt.Sprintf("LastAlert: %v", lastAlert))
 	}
 	if p.Disabled {
 		parts = append(parts, fmt.Sprintf("Disabled: true"))
@@ -433,10 +436,10 @@ func (p1 *Probe) Equal(p2 *Probe) bool {
 	if p1.Interval != p2.Interval {
 		return false
 	}
-	if p1.Alerting != p2.Alerting {
+	if p1.IsAlerting() != p2.IsAlerting() {
 		return false
 	}
-	if !p1.LastAlert.Equal(p2.LastAlert) {
+	if !p1.getLastAlert().Equal(p2.getLastAlert()) {
 		return false
 	}
 	if p1.Disabled != p2.Disabled {
@@ -558,19 +561,19 @@ func (p *Probe) handleResult(r Result) {
 	}
 	p.logResult(r)
 
-	if p.Badness < *alertThreshold {
-		p.Alerting = false
+	p.setIsAlerting(p.Badness >= *alertThreshold)
+	if !p.IsAlerting() {
 		return
 	}
 
-	p.Alerting = true
 	if *alertsDisabled {
 		glog.Infof("[%s] would now be alerting, but alerts are disabled\n", p.Name)
 		return
 	}
 
-	if time.Since(p.LastAlert) < MaxAlertFrequency {
-		glog.V(1).Infof("[%s] will not alert, since last alert was sent %v back\n", p.Name, time.Since(p.LastAlert))
+	lastAlert := p.getLastAlert()
+	if time.Since(lastAlert) < MaxAlertFrequency {
+		glog.V(1).Infof("[%s] will not alert, since last alert was sent %v back\n", p.Name, time.Since(lastAlert))
 		return
 	}
 
@@ -591,6 +594,36 @@ func (p *Probe) handleResult(r Result) {
 	go p.sendAlert()
 }
 
+// setIsAlerting changes the alerting status of the probe.
+func (p *Probe) setIsAlerting(alerting bool) {
+	p.alertLock.Lock()
+	p.alerting = alerting
+	p.alertLock.Unlock()
+}
+
+// IsAlerting returns true if the Probe is currently alerting.
+func (p *Probe) IsAlerting() bool {
+	p.alertLock.RLock()
+	defer p.alertLock.RUnlock()
+	return p.alerting
+}
+
+// setLastAlert sets the last alert fired to given time.
+func (p *Probe) setLastAlert(t time.Time) {
+	p.alertLock.Lock()
+	p.lastAlert = t
+	p.alertLock.Unlock()
+}
+
+// getLastAlert returns the time the Probe last alerted.
+//
+// getLastAlert returns the zero value for time.Time if the Probe has never alerted.
+func (p *Probe) getLastAlert() time.Time {
+	p.alertLock.RLock()
+	defer p.alertLock.RUnlock()
+	return p.lastAlert
+}
+
 // sendAlert calls the Alert() implementation and handles the outcome.
 func (p *Probe) sendAlert() {
 	err := p.Alert(p.Name, p.Desc, p.Badness, p.Records)
@@ -600,7 +633,7 @@ func (p *Probe) sendAlert() {
 		// trying to send the alert.
 	} else {
 		glog.Infof("[%s] Called Alert(), resetting badness to %d\n", p.Name, p.minBadness)
-		p.LastAlert = p.t.Now()
+		p.setLastAlert(p.t.Now())
 		p.Badness = p.minBadness
 	}
 }
@@ -670,14 +703,16 @@ func (ps Probes) Less(i, j int) bool {
 		// Probes with higher badness sort before ones with lower badness.
 		return ps[i].Badness > ps[j].Badness
 	}
-	if ps[i].Alerting != ps[j].Alerting {
+	a1, a2 := ps[i].IsAlerting(), ps[j].IsAlerting()
+	if a1 != a2 {
 		// Alerting probes sort before (lower value than) non-alerting ones.
-		return ps[i].Alerting
+		return a1
 	}
-	if !ps[i].LastAlert.Equal(ps[j].LastAlert) {
+	l1, l2 := ps[i].getLastAlert(), ps[j].getLastAlert()
+	if !l1.Equal(l2) {
 		// Probes that alerted longer ago sort after ones that alerted
 		// more recently.
-		return ps[i].LastAlert.After(ps[j].LastAlert)
+		return l1.After(l2)
 	}
 	if len(ps[i].Records) != len(ps[j].Records) {
 		// Probes with shorter history sort after those with longer
