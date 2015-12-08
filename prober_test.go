@@ -159,7 +159,6 @@ func TestProbe_runProbe(t *testing.T) {
 					Badness:       0,
 					SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:30 UTC")},
 					Interval:      time.Minute,
-					alerting:      true,
 				},
 				silenced: true,
 			},
