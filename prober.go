@@ -33,7 +33,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/hkjn/timeutils"
 	"gopkg.in/yaml.v2"
 )
 
@@ -517,7 +516,16 @@ func (r Record) String() string {
 
 // Ago describes the duration since the record occured.
 func (r Record) Ago() string {
-	return timeutils.DescDuration(time.Since(r.Timestamp))
+	d := time.Since(r.Timestamp)
+	if d < time.Minute {
+		return fmt.Sprintf("%0.1f sec ago", d.Seconds())
+	} else if d < time.Hour {
+		return fmt.Sprintf("%0.1f min ago", d.Minutes())
+	} else if d < time.Hour*24 {
+		return fmt.Sprintf("%0.1f hrs ago", d.Hours())
+	} else {
+		return fmt.Sprintf("%0.1f days ago", d.Hours()/24.0)
+	}
 }
 
 // Marshal returns the record in YAML form.
