@@ -111,7 +111,6 @@ type (
 		Interval      time.Duration // how often to probe
 		Disabled      bool          // whether this probe is disabled
 		SilencedUntil SilenceTime   // the earliest time this probe can alert
-		Records       Records       // historical records of probe runs
 		minBadness    int           // minimum allowed `badness` value
 		badnessInc    int           // how much to increment `badness` on failure
 		badnessDec    int           // how much to decrement `badness` on success
@@ -119,7 +118,9 @@ type (
 		t             timeT
 		alerting      bool         // whether this probe is currently alerting
 		lastAlert     time.Time    // time of last alert sent, if any
-		alertLock     sync.RWMutex // protects reads and writes to alerting
+		alertLock     sync.RWMutex // protects reads and writes to alerting state
+		records       Records      // historical records of probe runs
+		recordsLock   sync.RWMutex // protects reads and writes to stateful records
 	}
 	Probes []*Probe
 	// SilenceTime represents a Time until which the probe is
@@ -252,10 +253,10 @@ func NewProbe(p Prober, name, desc string, options ...Option) *Probe {
 		Desc:       desc,
 		Badness:    defaultMinBadness,
 		Interval:   *DefaultInterval,
-		Records:    Records{},
 		minBadness: defaultMinBadness,
 		badnessInc: defaultBadnessInc,
 		badnessDec: defaultBadnessDec,
+		records:    Records{},
 		t:          realTime{},
 		alertLock:  sync.RWMutex{},
 	}
@@ -389,15 +390,24 @@ func (p *Probe) runProbe() time.Duration {
 	}
 }
 
+// Records returns the historical records of probe runs.
+func (p *Probe) Records() Records {
+	p.recordsLock.RLock()
+	defer p.recordsLock.RUnlock()
+	return p.records
+}
+
 // add appends the record to the buffer for the probe, keeping it within bufferSize.
 func (p *Probe) addRecord(r Record) {
-	p.Records = append(p.Records, r)
-	if len(p.Records) >= bufferSize {
-		over := len(p.Records) - bufferSize
+	p.recordsLock.Lock()
+	p.records = append(p.records, r)
+	if len(p.records) >= bufferSize {
+		over := len(p.records) - bufferSize
 		glog.V(2).Infof("[%s] buffer is over %d, reslicing it\n", p.Name, bufferSize)
-		p.Records = p.Records[over:]
+		p.records = p.records[over:]
 	}
-	glog.V(2).Infof("[%s] buffer is now %d elements\n", p.Name, len(p.Records))
+	p.recordsLock.Unlock()
+	glog.V(2).Infof("[%s] buffer is now %d elements\n", p.Name, len(p.Records()))
 }
 
 // Silenced returns true if the probe is currently silenced.
@@ -427,7 +437,7 @@ func (p1 *Probe) Equal(p2 *Probe) bool {
 	if p1.Desc != p2.Desc {
 		return false
 	}
-	if !p1.Records.Equal(p2.Records) {
+	if !p1.Records().Equal(p2.Records()) {
 		return false
 	}
 	if p1.Badness != p2.Badness {
@@ -624,7 +634,7 @@ func (p *Probe) getLastAlert() time.Time {
 
 // sendAlert calls the Alert() implementation and handles the outcome.
 func (p *Probe) sendAlert() {
-	err := p.Alert(p.Name, p.Desc, p.Badness, p.Records)
+	err := p.Alert(p.Name, p.Desc, p.Badness, p.Records())
 	if err != nil {
 		glog.Errorf("[%s] Failed to alert: %v", p.Name, err)
 		// Note: We don't reset badness here; next cycle we'll keep
@@ -712,10 +722,11 @@ func (ps Probes) Less(i, j int) bool {
 		// more recently.
 		return l1.After(l2)
 	}
-	if len(ps[i].Records) != len(ps[j].Records) {
+	r1, r2 := ps[i].Records(), ps[j].Records()
+	if len(r1) != len(r2) {
 		// Probes with shorter history sort after those with longer
 		// history.
-		return len(ps[i].Records) > len(ps[j].Records)
+		return len(r1) > len(r2)
 	}
 	// Tie-breaker: Sort by name.
 	if ps[i].Name != ps[j].Name {
