@@ -102,24 +102,24 @@ type (
 
 	// Probe is a stateful representation of repeated probe runs.
 	Probe struct {
-		Prober            // underlying prober mechanism
-		Name, Desc string // name, description of the probe
-		// If badness reaches alert threshold, an alert email is sent and
-		// alertThreshold resets.
-		Badness       int
+		Prober                      // underlying prober mechanism
+		Name, Desc    string        // name, description of the probe
 		Interval      time.Duration // how often to probe
 		Disabled      bool          // whether this probe is disabled
 		SilencedUntil SilenceTime   // the earliest time this probe can alert
-		minBadness    int           // minimum allowed `badness` value
-		badnessInc    int           // how much to increment `badness` on failure
-		badnessDec    int           // how much to decrement `badness` on success
-		reportFn      func(Result)  // function to call to report probe results
-		t             timeT
-		alerting      bool         // whether this probe is currently alerting
-		lastAlert     time.Time    // time of last alert sent, if any
-		alertLock     sync.RWMutex // protects reads and writes to alerting state
-		records       Records      // historical records of probe runs
-		recordsLock   sync.RWMutex // protects reads and writes to stateful records
+		// If `badness` reaches alert threshold, an alert email is sent and
+		// the value resets to `minBadness`.
+		badness     int
+		minBadness  int          // minimum allowed `badness` value
+		badnessInc  int          // how much to increment `badness` on failure
+		badnessDec  int          // how much to decrement `badness` on success
+		reportFn    func(Result) // function to call to report probe results
+		t           timeT
+		alerting    bool         // whether this probe is currently alerting
+		lastAlert   time.Time    // time of last alert sent, if any
+		alertLock   sync.RWMutex // protects reads and writes to alerting state
+		records     Records      // historical records of probe runs
+		recordsLock sync.RWMutex // protects reads and writes to stateful records
 	}
 	Probes []*Probe
 	// SilenceTime represents a Time until which the probe is
@@ -250,8 +250,8 @@ func NewProbe(p Prober, name, desc string, options ...Option) *Probe {
 		Prober:     p,
 		Name:       name,
 		Desc:       desc,
-		Badness:    defaultMinBadness,
 		Interval:   *DefaultInterval,
+		badness:    defaultMinBadness,
 		minBadness: defaultMinBadness,
 		badnessInc: defaultBadnessInc,
 		badnessDec: defaultBadnessDec,
@@ -316,8 +316,8 @@ func (p *Probe) String() string {
 		fmt.Sprintf("Desc: %q", p.Desc),
 		fmt.Sprintf("Records: %s", p.Records),
 	}
-	if p.Badness != p.minBadness {
-		parts = append(parts, fmt.Sprintf("Badness: %d", p.Badness))
+	if p.Badness() != p.minBadness {
+		parts = append(parts, fmt.Sprintf("Badness: %d", p.Badness()))
 	}
 	if p.Interval != *DefaultInterval {
 		parts = append(parts, fmt.Sprintf("Interval: %v", p.Interval))
@@ -439,7 +439,7 @@ func (p1 *Probe) Equal(p2 *Probe) bool {
 	if !p1.Records().Equal(p2.Records()) {
 		return false
 	}
-	if p1.Badness != p2.Badness {
+	if p1.Badness() != p2.Badness() {
 		return false
 	}
 	if p1.Interval != p2.Interval {
@@ -568,23 +568,23 @@ func (p *Probe) handleResult(r Result) {
 		// Call custom report function, if specified.
 		p.reportFn(r)
 	}
+	b := p.Badness()
 	if r.Passed() {
-		if p.Badness > p.minBadness {
-			p.Badness -= p.badnessDec
-		}
-		glog.V(1).Infof("[%s] Pass, badness is now %d.\n", p.Name, p.Badness)
+		b -= p.badnessDec
+		glog.V(1).Infof("[%s] Pass, badness is now %d.\n", p.Name, b)
 	} else {
-		p.Badness += p.badnessInc
-		glog.Errorf("[%s] Failed while probing, badness is now %d: %v\n", p.Name, p.Badness, r.Error)
+		b += p.badnessInc
+		glog.Errorf("[%s] Failed while probing, badness is now %d: %v\n", p.Name, b, r.Error)
 	}
+	p.setBadness(b)
 	p.logResult(r)
 
 	if p.Silenced() {
 		glog.V(1).Infof("[%s] is silenced until %v, will not alert, resetting badness to %d\n", p.Name, p.SilencedUntil, p.minBadness)
-		p.Badness = p.minBadness
+		p.setBadness(p.minBadness)
 	}
 
-	p.setIsAlerting(p.Badness >= *alertThreshold)
+	p.setIsAlerting(p.Badness() >= *alertThreshold)
 	if !p.IsAlerting() {
 		return
 	}
@@ -624,6 +624,25 @@ func (p *Probe) IsAlerting() bool {
 	return p.alerting
 }
 
+// Badness returns the current `badness` value.
+func (p *Probe) Badness() int {
+	p.alertLock.RLock()
+	defer p.alertLock.RUnlock()
+	return p.badness
+}
+
+// setBadness sets the `badness` to specified value.
+//
+// setBadness keeps the `badness` value from becoming lower than `p.minBadness`.
+func (p *Probe) setBadness(b int) {
+	if b < p.minBadness {
+		b = p.minBadness
+	}
+	p.alertLock.Lock()
+	p.badness = b
+	p.alertLock.Unlock()
+}
+
 // setLastAlert sets the last alert fired to given time.
 func (p *Probe) setLastAlert(t time.Time) {
 	p.alertLock.Lock()
@@ -642,7 +661,7 @@ func (p *Probe) getLastAlert() time.Time {
 
 // sendAlert calls the Alert() implementation and handles the outcome.
 func (p *Probe) sendAlert() {
-	err := p.Alert(p.Name, p.Desc, p.Badness, p.Records())
+	err := p.Alert(p.Name, p.Desc, p.Badness(), p.Records())
 	if err != nil {
 		glog.Errorf("[%s] Failed to alert: %v", p.Name, err)
 		// Note: We don't reset badness here; next cycle we'll keep
@@ -650,7 +669,7 @@ func (p *Probe) sendAlert() {
 	} else {
 		glog.Infof("[%s] Called Alert(), resetting badness to %d\n", p.Name, p.minBadness)
 		p.setLastAlert(p.t.Now())
-		p.Badness = p.minBadness
+		p.setBadness(p.minBadness)
 	}
 }
 
@@ -715,9 +734,10 @@ func (ps Probes) Less(i, j int) bool {
 		// silenced at all, but that depends on the current time.)
 		return ps[i].SilencedUntil.Before(ps[j].SilencedUntil.Time)
 	}
-	if ps[i].Badness != ps[j].Badness {
-		// Probes with higher badness sort before ones with lower badness.
-		return ps[i].Badness > ps[j].Badness
+	b1, b2 := ps[i].Badness(), ps[j].Badness()
+	if b1 != b2 {
+		// Probes with higher `badness` sort before ones with lower `badness`.
+		return b1 > b2
 	}
 	a1, a2 := ps[i].IsAlerting(), ps[j].IsAlerting()
 	if a1 != a2 {

@@ -45,9 +45,9 @@ func TestProbe_runProbe(t *testing.T) {
 				Prober:     testProber{Passed()},
 				Name:       "TestProber1",
 				Desc:       "A test prober.",
-				Badness:    0,
 				Interval:   time.Minute,
 				records:    Records{},
+				badness:    0,
 				badnessInc: 10,
 				t:          fakeTime{parseTime("19 Nov 98 15:14 UTC")},
 			},
@@ -57,9 +57,9 @@ func TestProbe_runProbe(t *testing.T) {
 					Prober:     testProber{Passed()},
 					Name:       "TestProber1",
 					Desc:       "A test prober.",
-					Badness:    0,
 					Interval:   time.Minute,
 					t:          fakeTime{parseTime("19 Nov 98 15:14 UTC")},
+					badness:    0,
 					badnessInc: 10,
 					records: Records{
 						// TODO(hkjn): Clean up Timestamp vs TimeMillis.
@@ -77,8 +77,8 @@ func TestProbe_runProbe(t *testing.T) {
 				Prober:     testProber{FailedWith(errors.New("TestProber2 failing on purpose"))},
 				Name:       "TestProber2",
 				Desc:       "A test prober that fails.",
-				Badness:    0,
 				Interval:   time.Minute,
+				badness:    0,
 				badnessInc: 10,
 				t:          fakeTime{parseTime("19 Nov 98 15:14 UTC")},
 				records:    Records{},
@@ -88,8 +88,8 @@ func TestProbe_runProbe(t *testing.T) {
 				state: &Probe{
 					Name:       "TestProber2",
 					Desc:       "A test prober that fails.",
-					Badness:    defaultBadnessInc,
 					Interval:   *DefaultInterval,
+					badness:    defaultBadnessInc,
 					badnessInc: defaultBadnessInc,
 					records: Records{
 						Record{
@@ -106,9 +106,9 @@ func TestProbe_runProbe(t *testing.T) {
 				Prober:     testProber{FailedWith(errors.New("TestProber3 failing on purpose"))},
 				Name:       "TestProber3",
 				Desc:       "A test prober that alerts.",
-				Badness:    90,
-				badnessInc: 10,
 				Interval:   time.Minute,
+				badness:    90,
+				badnessInc: 10,
 				t:          fakeTime{parseTime("19 Nov 98 15:14 UTC")},
 				records:    Records{},
 			},
@@ -117,9 +117,9 @@ func TestProbe_runProbe(t *testing.T) {
 				state: &Probe{
 					Name:       "TestProber3",
 					Desc:       "A test prober that alerts.",
-					badnessInc: 10,
-					Badness:    100,
 					Interval:   time.Minute,
+					badnessInc: 10,
+					badness:    100,
 					alerting:   true,
 					records: Records{
 						Record{
@@ -137,9 +137,9 @@ func TestProbe_runProbe(t *testing.T) {
 				Name:          "TestProber4",
 				Desc:          "A test prober that is silenced.",
 				SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:30 UTC")},
-				Badness:       90,
-				badnessInc:    10,
 				Interval:      time.Minute,
+				badness:       90,
+				badnessInc:    10,
 				t:             fakeTime{parseTime("19 Nov 98 15:14 UTC")},
 				records:       Records{},
 			},
@@ -148,9 +148,9 @@ func TestProbe_runProbe(t *testing.T) {
 				state: &Probe{
 					Name:          "TestProber4",
 					Desc:          "A test prober that is silenced.",
-					Badness:       0,
 					SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:30 UTC")},
 					Interval:      time.Minute,
+					badness:       0,
 					badnessInc:    10,
 					records: Records{
 						Record{
@@ -169,9 +169,9 @@ func TestProbe_runProbe(t *testing.T) {
 				Name:          "TestProber5",
 				Desc:          "A test prober that was recently silenced.",
 				SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:13 UTC")},
-				Badness:       90,
-				badnessInc:    10,
 				Interval:      time.Minute,
+				badness:       90,
+				badnessInc:    10,
 				t:             fakeTime{parseTime("19 Nov 98 15:14 UTC")},
 				records:       Records{},
 			},
@@ -180,9 +180,9 @@ func TestProbe_runProbe(t *testing.T) {
 				state: &Probe{
 					Name:          "TestProber5",
 					Desc:          "A test prober that was recently silenced.",
-					Badness:       100,
 					SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:13 UTC")},
 					Interval:      time.Minute,
+					badness:       100,
 					badnessInc:    10,
 					alerting:      true,
 					records: Records{
@@ -202,9 +202,9 @@ func TestProbe_runProbe(t *testing.T) {
 				Name:          "TestProber6",
 				Desc:          "A test prober that is silenced and not alerting.",
 				SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:30 UTC")},
-				Badness:       50,
-				badnessInc:    10,
 				Interval:      time.Minute,
+				badness:       50,
+				badnessInc:    10,
 				t:             fakeTime{parseTime("19 Nov 98 15:14 UTC")},
 				records:       Records{},
 			},
@@ -213,9 +213,9 @@ func TestProbe_runProbe(t *testing.T) {
 				state: &Probe{
 					Name:          "TestProber6",
 					Desc:          "A test prober that is silenced and not alerting.",
-					Badness:       0,
 					SilencedUntil: SilenceTime{parseTime("19 Nov 98 15:30 UTC")},
 					Interval:      time.Minute,
+					badness:       0,
 					badnessInc:    10,
 					records: Records{
 						Record{
@@ -259,8 +259,8 @@ func TestProbes_Less(t *testing.T) {
 	}{
 		{
 			in: Probes{
-				&Probe{Badness: 51},
-				&Probe{Badness: 50},
+				&Probe{badness: 51},
+				&Probe{badness: 50},
 			},
 			want: true,
 		},
@@ -273,8 +273,8 @@ func TestProbes_Less(t *testing.T) {
 		},
 		{
 			in: Probes{
-				&Probe{Name: "worse", Badness: 50, alerting: true},
-				&Probe{Name: "bad", Badness: 50, alerting: false},
+				&Probe{Name: "worse", badness: 50, alerting: true},
+				&Probe{Name: "bad", badness: 50, alerting: false},
 			},
 			want: true,
 		},
@@ -282,13 +282,13 @@ func TestProbes_Less(t *testing.T) {
 			in: Probes{
 				&Probe{
 					Name:     "good",
-					Badness:  0,
+					badness:  0,
 					alerting: false,
 				},
 				&Probe{
 					Name:          "bad",
-					Badness:       50,
 					SilencedUntil: parseTime("15 Jun 16 15:04 UTC"),
+					badness:       50,
 					alerting:      true,
 				},
 			},
@@ -298,15 +298,15 @@ func TestProbes_Less(t *testing.T) {
 			in: Probes{
 				&Probe{
 					Name:          "bad but silenced for a shorter time",
-					Badness:       150,
-					alerting:      true,
 					SilencedUntil: parseTime("15 Jun 16 15:04 UTC"),
+					badness:       150,
+					alerting:      true,
 				},
 				&Probe{
 					Name:          "bad and silenced for a long time",
-					Badness:       150,
-					alerting:      true,
 					SilencedUntil: parseTime("15 Jun 17 15:04 UTC"),
+					badness:       150,
+					alerting:      true,
 				},
 			},
 			want: true,
@@ -315,15 +315,15 @@ func TestProbes_Less(t *testing.T) {
 			in: Probes{
 				&Probe{
 					Name:          "bad but silenced for a long time",
-					Badness:       80,
-					alerting:      true,
 					SilencedUntil: parseTime("15 Jun 17 15:04 UTC"),
+					badness:       80,
+					alerting:      true,
 				},
 				&Probe{
 					Name:          "bad and silenced for a long time but not alerting",
-					Badness:       80,
-					alerting:      false,
 					SilencedUntil: parseTime("15 Jun 17 15:04 UTC"),
+					badness:       80,
+					alerting:      false,
 				},
 			},
 			want: true,
@@ -332,16 +332,16 @@ func TestProbes_Less(t *testing.T) {
 			in: Probes{
 				&Probe{
 					Name:          "bad but silenced for a long time",
-					Badness:       50,
-					alerting:      true,
 					Disabled:      false,
 					SilencedUntil: parseTime("15 Jun 17 15:04 UTC"),
+					badness:       50,
+					alerting:      true,
 				},
 				&Probe{
 					Name:     "strange and bad",
-					Badness:  2500,
-					alerting: true,
 					Disabled: true,
+					badness:  2500,
+					alerting: true,
 				},
 			},
 			want: true,
@@ -373,41 +373,41 @@ func TestProbes_Sort(t *testing.T) {
 		},
 		{
 			in: Probes{
-				&Probe{Badness: 50},
-				&Probe{Badness: 51},
-				&Probe{Badness: 49},
+				&Probe{badness: 50},
+				&Probe{badness: 51},
+				&Probe{badness: 49},
 			},
 			want: Probes{
-				&Probe{Badness: 51},
-				&Probe{Badness: 50},
-				&Probe{Badness: 49},
+				&Probe{badness: 51},
+				&Probe{badness: 50},
+				&Probe{badness: 49},
 			},
 		},
 		{
 			in: Probes{
-				&Probe{Name: "bad", Badness: 50, alerting: false},
-				&Probe{Name: "worse", Badness: 50, alerting: true},
-				&Probe{Name: "still bad", Badness: 49},
-				&Probe{Name: "less bad", Badness: 20, alerting: true},
+				&Probe{Name: "bad", badness: 50, alerting: false},
+				&Probe{Name: "worse", badness: 50, alerting: true},
+				&Probe{Name: "still bad", badness: 49},
+				&Probe{Name: "less bad", badness: 20, alerting: true},
 			},
 			want: Probes{
-				&Probe{Name: "worse", Badness: 50, alerting: true},
-				&Probe{Name: "bad", Badness: 50, alerting: false},
-				&Probe{Name: "still bad", Badness: 49},
-				&Probe{Name: "less bad", Badness: 20, alerting: true},
+				&Probe{Name: "worse", badness: 50, alerting: true},
+				&Probe{Name: "bad", badness: 50, alerting: false},
+				&Probe{Name: "still bad", badness: 49},
+				&Probe{Name: "less bad", badness: 20, alerting: true},
 			},
 		},
 		{
 			in: Probes{
-				&Probe{Name: "bad", Badness: 50, alerting: false},
-				&Probe{Name: "worse", Badness: 50, alerting: true},
+				&Probe{Name: "bad", badness: 50, alerting: false},
+				&Probe{Name: "worse", badness: 50, alerting: true},
 				&Probe{Name: "disabled", Disabled: true},
-				&Probe{Name: "less bad", Badness: 20, alerting: true},
+				&Probe{Name: "less bad", badness: 20, alerting: true},
 			},
 			want: Probes{
-				&Probe{Name: "worse", Badness: 50, alerting: true},
-				&Probe{Name: "bad", Badness: 50, alerting: false},
-				&Probe{Name: "less bad", Badness: 20, alerting: true},
+				&Probe{Name: "worse", badness: 50, alerting: true},
+				&Probe{Name: "bad", badness: 50, alerting: false},
+				&Probe{Name: "less bad", badness: 20, alerting: true},
 				&Probe{Name: "disabled", Disabled: true},
 			},
 		},
@@ -416,16 +416,16 @@ func TestProbes_Sort(t *testing.T) {
 				// A probe shouldn't normally both be disabled and have high
 				// Badness or be Alerting, but this is a unit test, and we
 				// still should put the Disabled probe last..
-				&Probe{Name: "strange and bad", Badness: 2500, alerting: true, Disabled: true},
-				&Probe{Name: "normal bad", Badness: 50, alerting: true, Disabled: false},
-				&Probe{Name: "not bad", Badness: 0, alerting: false, Disabled: false},
-				&Probe{Name: "just disabled", Badness: 0, alerting: false, Disabled: true},
+				&Probe{Name: "strange and bad", badness: 2500, alerting: true, Disabled: true},
+				&Probe{Name: "normal bad", badness: 50, alerting: true, Disabled: false},
+				&Probe{Name: "not bad", badness: 0, alerting: false, Disabled: false},
+				&Probe{Name: "just disabled", badness: 0, alerting: false, Disabled: true},
 			},
 			want: Probes{
-				&Probe{Name: "normal bad", Badness: 50, alerting: true, Disabled: false},
-				&Probe{Name: "not bad", Badness: 0, alerting: false, Disabled: false},
-				&Probe{Name: "strange and bad", Badness: 2500, alerting: true, Disabled: true},
-				&Probe{Name: "just disabled", Badness: 0, alerting: false, Disabled: true},
+				&Probe{Name: "normal bad", badness: 50, alerting: true, Disabled: false},
+				&Probe{Name: "not bad", badness: 0, alerting: false, Disabled: false},
+				&Probe{Name: "strange and bad", badness: 2500, alerting: true, Disabled: true},
+				&Probe{Name: "just disabled", badness: 0, alerting: false, Disabled: true},
 			},
 		},
 	}
