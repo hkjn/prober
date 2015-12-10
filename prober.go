@@ -44,22 +44,22 @@ var (
 	// TODO(hkjn): Replace this with a global "max 1 alerts per X
 	// minutes" setting? If we have 1000 probes, we still would get 1000
 	// alerts every 15 min..
-	MaxAlertFrequency = time.Minute * 15 // never call Alert() more often than this
-	DefaultInterval   = flag.Duration("probe_interval", time.Minute, "duration to pause between prober runs")
-	logDir            = os.TempDir()          // logging directory
-	logName           = "prober.outcomes.log" // name of logging f1ile
-	alertThreshold    = flag.Int("alert_threshold", 100, "level of 'badness' before alerting")
-	alertsDisabled    = flag.Bool("no_alerts", false, "disables alerts when probes fail too often")
-	disabledProbes    = make(selectedProbes)
-	onlyProbes        = make(selectedProbes)
-	defaultMinBadness = 0  // default minimum allowed `badness`
-	defaultBadnessInc = 10 // default increment on failed probe
-	defaultBadnessDec = 1  // default decrement on successful probe
-	onceOpen          sync.Once
-	logFile           *os.File
-	bufferSize        = 200 // maximum number of results per prober to keep
-	parseFlags        = sync.Once{}
-	results           = [2]string{"Pass", "Fail"}
+	MaxAlertFrequency     = time.Minute * 15 // never call Alert() more often than this
+	DefaultInterval       = flag.Duration("probe_interval", time.Minute, "duration to pause between prober runs")
+	logDir                = os.TempDir()          // logging directory
+	logName               = "prober.outcomes.log" // name of logging f1ile
+	alertThreshold        = flag.Int("alert_threshold", 100, "level of 'badness' before alerting")
+	alertsDisabled        = flag.Bool("no_alerts", false, "disables alerts when probes fail too often")
+	disabledProbes        = make(selectedProbes)
+	onlyProbes            = make(selectedProbes)
+	defaultMinBadness     = 0  // default minimum allowed `badness`
+	defaultFailurePenalty = 10 // default increment of `badness` on failed probe run
+	defaultSuccessReward  = 1  // default decrement of `badness` on successful probe run
+	onceOpen              sync.Once
+	logFile               *os.File
+	bufferSize            = 200 // maximum number of results per prober to keep
+	parseFlags            = sync.Once{}
+	results               = [2]string{"Pass", "Fail"}
 )
 
 const (
@@ -113,17 +113,17 @@ type (
 		SilencedUntil SilenceTime   // the earliest time this probe can alert
 		// If `badness` reaches alert threshold, an alert email is sent and
 		// the value resets to `minBadness`.
-		badness     int
-		minBadness  int          // minimum allowed `badness` value
-		badnessInc  int          // how much to increment `badness` on failure
-		badnessDec  int          // how much to decrement `badness` on success
-		reportFn    func(Result) // function to call to report probe results
-		t           timeT
-		alerting    bool         // whether this probe is currently alerting
-		lastAlert   time.Time    // time of last alert sent, if any
-		alertLock   sync.RWMutex // protects reads and writes to alerting state
-		records     Records      // historical records of probe runs
-		recordsLock sync.RWMutex // protects reads and writes to stateful records
+		badness        int
+		minBadness     int          // minimum allowed `badness` value
+		failurePenalty int          // how much to increment `badness` on failure
+		successReward  int          // how much to decrement `badness` on success
+		reportFn       func(Result) // function to call to report probe results
+		t              timeT
+		alerting       bool         // whether this probe is currently alerting
+		lastAlert      time.Time    // time of last alert sent, if any
+		alertLock      sync.RWMutex // protects reads and writes to alerting state
+		records        Records      // historical records of probe runs
+		recordsLock    sync.RWMutex // protects reads and writes to stateful records
 	}
 	Probes []*Probe
 	// SilenceTime represents a Time until which the probe is
@@ -251,17 +251,17 @@ func NewProbe(p Prober, name, desc string, options ...Option) *Probe {
 		}
 	})
 	probe := &Probe{
-		Prober:     p,
-		Name:       name,
-		Desc:       desc,
-		Interval:   *DefaultInterval,
-		badness:    defaultMinBadness,
-		minBadness: defaultMinBadness,
-		badnessInc: defaultBadnessInc,
-		badnessDec: defaultBadnessDec,
-		records:    Records{},
-		t:          realTime{},
-		alertLock:  sync.RWMutex{},
+		Prober:         p,
+		Name:           name,
+		Desc:           desc,
+		Interval:       *DefaultInterval,
+		badness:        defaultMinBadness,
+		minBadness:     defaultMinBadness,
+		failurePenalty: defaultFailurePenalty,
+		successReward:  defaultSuccessReward,
+		records:        Records{},
+		t:              realTime{},
+		alertLock:      sync.RWMutex{},
 	}
 	for _, opt := range options {
 		opt(probe)
@@ -284,16 +284,16 @@ func Report(fn func(Result)) func(*Probe) {
 }
 
 // FailurePenalty sets the amount `badness` is incremented on failure for the prober.
-func FailurePenalty(badnessInc int) func(*Probe) {
+func FailurePenalty(penalty int) func(*Probe) {
 	return func(p *Probe) {
-		p.badnessInc = badnessInc
+		p.failurePenalty = penalty
 	}
 }
 
 // SuccessReward sets the amount `badness` is decremented on success for the prober.
-func SuccessReward(badnessDec int) func(*Probe) {
+func SuccessReward(reward int) func(*Probe) {
 	return func(p *Probe) {
-		p.badnessDec = badnessDec
+		p.successReward = reward
 	}
 }
 
@@ -342,8 +342,8 @@ func (p *Probe) String() string {
 	if p.minBadness != defaultMinBadness {
 		parts = append(parts, fmt.Sprintf("minBadness: %v", p.minBadness))
 	}
-	if p.badnessInc != defaultBadnessInc {
-		parts = append(parts, fmt.Sprintf("badnessInc: %v", p.badnessInc))
+	if p.failurePenalty != defaultFailurePenalty {
+		parts = append(parts, fmt.Sprintf("failurePenalty: %v", p.failurePenalty))
 	}
 	return fmt.Sprintf("&Probe{%s}", strings.Join(parts, ", "))
 }
@@ -464,7 +464,7 @@ func (p1 *Probe) Equal(p2 *Probe) bool {
 	if p1.minBadness != p2.minBadness {
 		return false
 	}
-	if p1.badnessInc != p2.badnessInc {
+	if p1.failurePenalty != p2.failurePenalty {
 		return false
 	}
 	return true
@@ -574,10 +574,10 @@ func (p *Probe) handleResult(r Result) {
 	}
 	b := p.Badness()
 	if r.Passed() {
-		b -= p.badnessDec
+		b -= p.successReward
 		glog.V(1).Infof("[%s] Pass, badness is now %d.\n", p.Name, b)
 	} else {
-		b += p.badnessInc
+		b += p.failurePenalty
 		glog.Errorf("[%s] Failed while probing, badness is now %d: %v\n", p.Name, b, r.Error)
 	}
 	p.setBadness(b)
