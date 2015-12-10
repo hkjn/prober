@@ -52,7 +52,6 @@ var (
 	alertsDisabled        = flag.Bool("no_alerts", false, "disables alerts when probes fail too often")
 	disabledProbes        = make(selectedProbes)
 	onlyProbes            = make(selectedProbes)
-	defaultMinBadness     = 0  // default minimum allowed `badness`
 	defaultFailurePenalty = 10 // default increment of `badness` on failed probe run
 	defaultSuccessReward  = 1  // default decrement of `badness` on successful probe run
 	onceOpen              sync.Once
@@ -112,9 +111,8 @@ type (
 		Disabled      bool          // whether this probe is disabled
 		SilencedUntil SilenceTime   // the earliest time this probe can alert
 		// If `badness` reaches alert threshold, an alert email is sent and
-		// the value resets to `minBadness`.
+		// the value resets to 0.
 		badness        int
-		minBadness     int          // minimum allowed `badness` value
 		failurePenalty int          // how much to increment `badness` on failure
 		successReward  int          // how much to decrement `badness` on success
 		reportFn       func(Result) // function to call to report probe results
@@ -255,8 +253,7 @@ func NewProbe(p Prober, name, desc string, options ...Option) *Probe {
 		Name:           name,
 		Desc:           desc,
 		Interval:       *DefaultInterval,
-		badness:        defaultMinBadness,
-		minBadness:     defaultMinBadness,
+		badness:        0,
 		failurePenalty: defaultFailurePenalty,
 		successReward:  defaultSuccessReward,
 		records:        Records{},
@@ -320,7 +317,7 @@ func (p *Probe) String() string {
 		fmt.Sprintf("Desc: %q", p.Desc),
 		fmt.Sprintf("Records: %s", p.Records()),
 	}
-	if p.Badness() != p.minBadness {
+	if p.Badness() != 0 {
 		parts = append(parts, fmt.Sprintf("Badness: %d", p.Badness()))
 	}
 	if p.Interval != *DefaultInterval {
@@ -338,9 +335,6 @@ func (p *Probe) String() string {
 	}
 	if !p.SilencedUntil.Equal(time.Time{}) {
 		parts = append(parts, fmt.Sprintf("SilencedUntil: %v", p.SilencedUntil))
-	}
-	if p.minBadness != defaultMinBadness {
-		parts = append(parts, fmt.Sprintf("minBadness: %v", p.minBadness))
 	}
 	if p.failurePenalty != defaultFailurePenalty {
 		parts = append(parts, fmt.Sprintf("failurePenalty: %v", p.failurePenalty))
@@ -459,9 +453,6 @@ func (p1 *Probe) Equal(p2 *Probe) bool {
 		return false
 	}
 	if !p1.SilencedUntil.Equal(p2.SilencedUntil.Time) {
-		return false
-	}
-	if p1.minBadness != p2.minBadness {
 		return false
 	}
 	if p1.failurePenalty != p2.failurePenalty {
@@ -584,8 +575,8 @@ func (p *Probe) handleResult(r Result) {
 	p.logResult(r)
 
 	if p.Silenced() {
-		glog.V(1).Infof("[%s] is silenced until %v, will not alert, resetting badness to %d\n", p.Name, p.SilencedUntil, p.minBadness)
-		p.setBadness(p.minBadness)
+		glog.V(1).Infof("[%s] is silenced until %v, will not alert, resetting badness to 0\n", p.Name, p.SilencedUntil)
+		p.setBadness(0)
 	}
 
 	p.setIsAlerting(p.Badness() >= *alertThreshold)
@@ -637,10 +628,10 @@ func (p *Probe) Badness() int {
 
 // setBadness sets the `badness` to specified value.
 //
-// setBadness keeps the `badness` value from becoming lower than `p.minBadness`.
+// setBadness keeps the `badness` value from becoming lower than 0.
 func (p *Probe) setBadness(b int) {
-	if b < p.minBadness {
-		b = p.minBadness
+	if b < 0 {
+		b = 0
 	}
 	p.alertLock.Lock()
 	p.badness = b
@@ -671,9 +662,9 @@ func (p *Probe) sendAlert() {
 		// Note: We don't reset badness here; next cycle we'll keep
 		// trying to send the alert.
 	} else {
-		glog.Infof("[%s] Called Alert(), resetting badness to %d\n", p.Name, p.minBadness)
+		glog.Infof("[%s] Called Alert(), resetting badness to 0\n", p.Name)
 		p.setLastAlert(p.t.Now())
-		p.setBadness(p.minBadness)
+		p.setBadness(0)
 	}
 }
 
