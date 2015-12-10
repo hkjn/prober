@@ -52,7 +52,7 @@ func TestProbe_runProbe(t *testing.T) {
 				t:              fakeTime{parseTime("19 Nov 98 15:14 UTC")},
 			},
 			want: want{
-				wait: *DefaultInterval,
+				wait: DefaultInterval,
 				state: &Probe{
 					Prober:         testProber{Passed()},
 					Name:           "TestProber1",
@@ -84,11 +84,11 @@ func TestProbe_runProbe(t *testing.T) {
 				records:        Records{},
 			},
 			want: want{
-				wait: *DefaultInterval,
+				wait: DefaultInterval,
 				state: &Probe{
 					Name:           "TestProber2",
 					Desc:           "A test prober that fails.",
-					Interval:       *DefaultInterval,
+					Interval:       DefaultInterval,
 					badness:        10,
 					failurePenalty: 10,
 					records: Records{
@@ -113,7 +113,7 @@ func TestProbe_runProbe(t *testing.T) {
 				records:        Records{},
 			},
 			want: want{
-				wait: *DefaultInterval,
+				wait: DefaultInterval,
 				state: &Probe{
 					Name:           "TestProber3",
 					Desc:           "A test prober that alerts.",
@@ -144,7 +144,7 @@ func TestProbe_runProbe(t *testing.T) {
 				records:        Records{},
 			},
 			want: want{
-				wait: *DefaultInterval,
+				wait: DefaultInterval,
 				state: &Probe{
 					Name:           "TestProber4",
 					Desc:           "A test prober that is silenced.",
@@ -176,7 +176,7 @@ func TestProbe_runProbe(t *testing.T) {
 				records:        Records{},
 			},
 			want: want{
-				wait: *DefaultInterval,
+				wait: DefaultInterval,
 				state: &Probe{
 					Name:           "TestProber5",
 					Desc:           "A test prober that was recently silenced.",
@@ -209,7 +209,7 @@ func TestProbe_runProbe(t *testing.T) {
 				records:        Records{},
 			},
 			want: want{
-				wait: *DefaultInterval,
+				wait: DefaultInterval,
 				state: &Probe{
 					Name:           "TestProber6",
 					Desc:           "A test prober that is silenced and not alerting.",
