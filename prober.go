@@ -5,20 +5,24 @@
 //
 //   // Probe "Foo". E.g. do a network call and compare it to what
 //   // was expected.
-//   func (p FooProber) Probe() error {
-//     // Returning non-nil indicates that the probe failed.
+//   func (p FooProber) Probe() Result {
+//     // Returning FailedWith(err) indicates that the probe failed.
+//     // Returning Passed() indicates that the probe succeeded.
 //   }
-//   // Send an alert. Called if the probe fails too often.
-//   func (p FooProber) Alert() error {
+//   // Send an alert. Called if the probe fails "too often".
+//   //
+//   // By passing in FailurePenalty() and/or SuccessReward() options to NewProbe(),
+//   // the adjustments to the state when probe fails or passes can be modified.
+//   func (p FooProber) Alert(name, desc string, badness int, records Records) error {
 //   }
 //   ...
 //
 //   // Create the probe.
-//   p := prober.NewProbe(FooProber{1}, "FooProber", "Probes the Foo")
+//   p := NewProbe(FooProber{1}, "FooProber", "Probes the Foo")
 //
 //   // Run the probe. This call blocks forever, so you may
 //   // want to do this in a goroutine — you could e.g. register a web
-//   // handler to show the contents of p.Records here.
+//   // handler to show the contents of p.Records() here.
 //   go p.Run()
 package prober
 
