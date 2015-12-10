@@ -41,11 +41,11 @@ import (
 )
 
 var (
+	DefaultInterval = time.Minute // default duration to pause between Probe() runs
 	// TODO(hkjn): Replace this with a global "max 1 alerts per X
 	// minutes" setting? If we have 1000 probes, we still would get 1000
 	// alerts every 15 min..
-	MaxAlertFrequency     = time.Minute * 15 // never call Alert() more often than this
-	DefaultInterval       = flag.Duration("probe_interval", time.Minute, "duration to pause between prober runs")
+	MaxAlertFrequency     = time.Minute * 15      // never call Alert() more often than this
 	logDir                = os.TempDir()          // logging directory
 	logName               = "prober.outcomes.log" // name of logging f1ile
 	alertThreshold        = flag.Int("alert_threshold", 100, "level of 'badness' before alerting")
@@ -252,7 +252,7 @@ func NewProbe(p Prober, name, desc string, options ...Option) *Probe {
 		Prober:         p,
 		Name:           name,
 		Desc:           desc,
-		Interval:       *DefaultInterval,
+		Interval:       DefaultInterval,
 		badness:        0,
 		failurePenalty: defaultFailurePenalty,
 		successReward:  defaultSuccessReward,
@@ -320,7 +320,7 @@ func (p *Probe) String() string {
 	if p.Badness() != 0 {
 		parts = append(parts, fmt.Sprintf("Badness: %d", p.Badness()))
 	}
-	if p.Interval != *DefaultInterval {
+	if p.Interval != DefaultInterval {
 		parts = append(parts, fmt.Sprintf("Interval: %v", p.Interval))
 	}
 	if p.IsAlerting() {
