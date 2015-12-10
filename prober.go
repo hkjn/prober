@@ -318,7 +318,7 @@ func (p *Probe) String() string {
 	parts := []string{
 		fmt.Sprintf("Name: %q", p.Name),
 		fmt.Sprintf("Desc: %q", p.Desc),
-		fmt.Sprintf("Records: %s", p.Records),
+		fmt.Sprintf("Records: %s", p.Records()),
 	}
 	if p.Badness() != p.minBadness {
 		parts = append(parts, fmt.Sprintf("Badness: %d", p.Badness()))
