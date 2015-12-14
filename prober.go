@@ -630,7 +630,7 @@ func (p *Probe) Badness() int {
 //
 // setBadness keeps the `badness` value from becoming lower than 0.
 func (p *Probe) setBadness(b int) {
-	if b < 0 {
+	if b <= 0 {
 		b = 0
 	}
 	p.alertLock.Lock()
