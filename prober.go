@@ -566,6 +566,9 @@ func (p *Probe) handleResult(r Result) {
 	b := p.Badness()
 	if r.Passed() {
 		b -= p.successReward
+		if b < 0 {
+			b = 0
+		}
 		glog.V(1).Infof("[%s] Pass, badness is now %d.\n", p.Name, b)
 	} else {
 		b += p.failurePenalty
@@ -627,12 +630,7 @@ func (p *Probe) Badness() int {
 }
 
 // setBadness sets the `badness` to specified value.
-//
-// setBadness keeps the `badness` value from becoming lower than 0.
 func (p *Probe) setBadness(b int) {
-	if b <= 0 {
-		b = 0
-	}
 	p.alertLock.Lock()
 	p.badness = b
 	p.alertLock.Unlock()
