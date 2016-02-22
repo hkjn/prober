@@ -88,6 +88,9 @@ type (
 	// Records is a grouping of probe records that implements sort.Interface.
 	Records []Record
 
+	// AlertFn is function that is called when a Prober is alerting.
+	AlertFn func(name, desc string, badness int, records Records) error
+
 	// Prober is a mechanism that can probe some target(s).
 	Prober interface {
 		Probe() Result                                               // probe target(s) once
