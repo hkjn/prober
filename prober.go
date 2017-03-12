@@ -80,7 +80,7 @@ type (
 
 	// Record is the result of a single probe run.
 	Record struct {
-		Timestamp  time.Time `yaml: "-"`
+		Timestamp  time.Time `yaml:"-"`
 		TimeMillis string    // same as Timestamp but makes it into the YAML logs
 		Result     Result    // the result of the probe run
 	}
